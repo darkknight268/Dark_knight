@@ -5,6 +5,12 @@ VERSION="2.0"
 MAX_RETRIES=2
 RETRY_DELAY=30
 
+# Auto-load config if present
+CONFIG_DIR="$(cd "$(dirname "$0")" && pwd)"
+[ -f "$CONFIG_DIR/recon.cfg" ] && source "$CONFIG_DIR/recon.cfg"
+[ -f ~/.config/bug-hunter/recon.cfg ] && source ~/.config/bug-hunter/recon.cfg
+
+
 # ── Dark-Knight Premium Color Palette ──
 R='\033[38;5;203m'     # Red / Critical
 G='\033[38;5;48m'      # Mint Green / Success
@@ -16,7 +22,7 @@ D='\033[38;5;242m'     # Dark Gray / Dim
 N='\033[0m'            # Reset
 
 REQUIRED_TOOLS=(assetfinder subfinder sublist3r findomain httpx-toolkit katana hakrawler waybackurls gau gospider paramspider amass jq curl censys nmap asnmap naabu nuclei gf)
-NUCLEI_TEMPLATES="$HOME/nuclei-templates"
+NUCLEI_TEMPLATES="${NUCLEI_TEMPLATES:-$HOME/nuclei-templates}"
 
 check_deps() {
     local missing=()
@@ -325,19 +331,19 @@ probe_alive() {
         mkdir -p "$bd"
 
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}springboot-actuator${N}  ${D}checking actuator exposure ...${N}"
-        cat "$sd/alive.txt" | nuclei -t /home/Dark-Knight/nuclei-templates/http/technologies/springboot-actuator.yaml -silent -o "$bd/springboot_actuator.txt" 2>/dev/null || true
+        cat "$sd/alive.txt" | nuclei -t $NUCLEI_TEMPLATES/http/technologies/springboot-actuator.yaml -silent -o "$bd/springboot_actuator.txt" 2>/dev/null || true
 
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}phpinfo-files${N}  ${D}checking phpinfo exposure ...${N}"
-        cat "$sd/alive.txt" | nuclei -t /home/Dark-Knight/nuclei-templates/http/exposures/configs/phpinfo-files.yaml -silent -o "$bd/phpinfo_files.txt" 2>/dev/null || true
+        cat "$sd/alive.txt" | nuclei -t $NUCLEI_TEMPLATES/http/exposures/configs/phpinfo-files.yaml -silent -o "$bd/phpinfo_files.txt" 2>/dev/null || true
 
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}exposed-configs${N}  ${D}scanning configs ...${N}"
-        nuclei -l "$sd/alive.txt" -t /home/Dark-Knight/nuclei-templates/http/exposed-configs/ -silent -o "$bd/exposed_configs.txt" 2>/dev/null || true
+        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/exposed-configs/ -silent -o "$bd/exposed_configs.txt" 2>/dev/null || true
 
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}default-logins${N}  ${D}scanning logins ...${N}"
-        nuclei -l "$sd/alive.txt" -t /home/Dark-Knight/nuclei-templates/http/default-logins/ -silent -o "$bd/default_logins.txt" 2>/dev/null || true
+        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/default-logins/ -silent -o "$bd/default_logins.txt" 2>/dev/null || true
 
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}misconfiguration${N}  ${D}scanning misconfigs ...${N}"
-        nuclei -l "$sd/alive.txt" -t /home/Dark-Knight/nuclei-templates/http/misconfiguration/ -silent -o "$bd/misconfig.txt" 2>/dev/null || true
+        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/misconfiguration/ -silent -o "$bd/misconfig.txt" 2>/dev/null || true
     fi
 
     phase_sep
@@ -359,11 +365,11 @@ fingerprint_tech() {
     mkdir -p "$tech_dir"
 
     echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}tech stack nuclei${N}  ${D}scanning alive hosts ...${N}"
-    nuclei -l "$sd/alive.txt" -t "/home/Dark-Knight/nuclei-templates/http/technologies/" -silent -jsonl -o "$tech_dir/tech_nuclei.json" 2>/dev/null || true
+    nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/technologies/" -silent -jsonl -o "$tech_dir/tech_nuclei.json" 2>/dev/null || true
     local tnc; tnc=$(jq -c '.' "$tech_dir/tech_nuclei.json" 2>/dev/null | wc -l || echo 0)
 
     echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}waf detect${N}  ${D}checking for WAFs ...${N}"
-    nuclei -l "$sd/alive.txt" -t "/home/Dark-Knight/nuclei-templates/http/technologies/waf-detect.yaml" -silent -o "$tech_dir/waf_detect.txt" 2>/dev/null || true
+    nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/technologies/waf-detect.yaml" -silent -o "$tech_dir/waf_detect.txt" 2>/dev/null || true
     local wc; wc=$(wc -l < "$tech_dir/waf_detect.txt" 2>/dev/null || echo 0)
 
     # Extract top tech from httpx
@@ -610,12 +616,12 @@ detect_bugs() {
 
     if [[ -s "$sd/alive.txt" ]]; then
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}quick-win nuclei${N}  ${D}scanning for panels ...${N}"
-        nuclei -l "$sd/alive.txt" -t "/home/Dark-Knight/nuclei-templates/http/panels/" -silent -o "$bd/panels.txt" 2>/dev/null || true
+        nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/panels/" -silent -o "$bd/panels.txt" 2>/dev/null || true
     fi
 
     if [[ -s "$sd/allendpoints.txt" ]]; then
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}endpoint nuclei${N}  ${D}scanning endpoints ...${N}"
-        nuclei -l "$sd/allendpoints.txt" -t "/home/Dark-Knight/nuclei-templates/http/vulnerabilities/" -silent -o "$bd/vulns.txt" 2>/dev/null || true
+        nuclei -l "$sd/allendpoints.txt" -t "$NUCLEI_TEMPLATES/http/vulnerabilities/" -silent -o "$bd/vulns.txt" 2>/dev/null || true
     fi
 
     local ec; ec=$(wc -l "$bd/exposed_configs.txt" 2>/dev/null | awk '{print $1}')

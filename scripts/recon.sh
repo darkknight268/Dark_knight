@@ -43,7 +43,7 @@ TARGET=$1
 [ -z "$TARGET" ] && { echo "Usage: $0 <target.tld>"; exit 1; }
 OUTPUT_DIR="/tmp/bug-hunter-$TARGET"
 TOTAL_PHASES=9
-NUCLEI_TEMPLATES="/home/Dark-Knight/nuclei-templates"
+NUCLEI_TEMPLATES="${NUCLEI_TEMPLATES:-$HOME/nuclei-templates}"
 WHATWEB="/tmp/whatweb/whatweb"
 TIMING="\033[2m"  NL="\033[0m"
 

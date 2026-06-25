@@ -2,6 +2,12 @@
 # Bug Hunter Recon - API Key Configuration (example)
 # Copy to recon.cfg and fill in your keys.
 # Source: https://github.com/darkknight268/Dark-Knight
+# ============================================================
+# Custom Nuclei Templates Path
+# ============================================================
+# Default is $HOME/nuclei-templates. Uncomment and edit to override.
+# export NUCLEI_TEMPLATES="/home/Dark-Knight/nuclei-templates"
+
 #
 # All keys are optional. Missing keys = source silently skipped.
 # The script won't fail — you'll just get fewer results.
