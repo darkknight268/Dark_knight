@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-VERSION="1.0"
+VERSION="2.0"
 MAX_RETRIES=2
 RETRY_DELAY=30
 
-# ── Dark-Knight Color Palette ──
-R='\033[0;31m'
-G='\033[0;32m'
-Y='\033[1;33m'
-C='\033[0;36m'
-O='\033[38;5;208m'
-W='\033[1;37m'
-D='\033[2;37m'
-N='\033[0m'
+# ── Dark-Knight Premium Color Palette ──
+R='\033[38;5;203m'     # Red / Critical
+G='\033[38;5;48m'      # Mint Green / Success
+Y='\033[38;5;220m'     # Gold Yellow / Warning
+C='\033[38;5;51m'      # Neon Cyan / Info
+O='\033[38;5;201m'     # Magenta Purple / Accent
+W='\033[1;37m'         # Bright White
+D='\033[38;5;242m'     # Dark Gray / Dim
+N='\033[0m'            # Reset
 
 REQUIRED_TOOLS=(assetfinder subfinder sublist3r findomain httpx-toolkit katana hakrawler waybackurls gau gospider paramspider amass jq curl censys nmap asnmap naabu nuclei gf)
 NUCLEI_TEMPLATES="$HOME/nuclei-templates"
@@ -24,23 +24,24 @@ check_deps() {
         command -v "$tool" &>/dev/null || missing+=("$tool")
     done
     if [[ ${#missing[@]} -gt 0 ]]; then
-        echo -e "\n${Y}┃${N} ${Y}⚠${N} Missing tools: ${Y}${missing[*]}${N}"
+        echo -e "\n  ${O}✦${N} ${W}DEPENDENCY AUDIT${N} ${D}│ Checking environment...${N}"
+        echo -e "  ${D}───────────────────────────────────────────────${N}"
         for tool in "${missing[@]}"; do
             case "$tool" in
                 censys)
-                    echo -e "  ${D}┃${N}  ${C}→${N} Installing censys via pip ..."
+                    echo -e "  ${D}│${N}  ${C}→${N} Installing censys via pip ..."
                     pip3 install --user --break-system-packages censys 2>&1 | tail -1
                     ;;
-                    nmap)
-                    echo -e "  ${D}┃${N}  ${C}→${N} Installing nmap via apt ..."
+                nmap)
+                    echo -e "  ${D}│${N}  ${C}→${N} Installing nmap via apt ..."
                     sudo apt-get install -y nmap 2>&1 | tail -1
                     ;;
                 asnmap)
-                    echo -e "  ${D}┃${N}  ${C}→${N} Installing asnmap via go ..."
+                    echo -e "  ${D}│${N}  ${C}→${N} Installing asnmap via go ..."
                     go install github.com/projectdiscovery/asnmap/cmd/asnmap@latest 2>&1 | tail -1
                     ;;
                 *)
-                    echo -e "  ${D}┃${N}  ${R}✗${N} Install ${tool} manually (e.g. go install ... or apt-get install ...)"
+                    printf "  ${D}│${N}  ${R}✗ ${W}%-15s${N} ${D}Install manually${N}\n" "$tool"
                     ;;
             esac
         done
@@ -50,7 +51,9 @@ check_deps() {
             command -v "$tool" &>/dev/null || still_missing+=("$tool")
         done
         if [[ ${#still_missing[@]} -gt 0 ]]; then
-            echo -e "\n${R}┃${N} ${R}✗${N} Still missing: ${R}${still_missing[*]}${N}"; exit 1
+            echo -e "\n  ${R}✗${N} ${W}Build aborted. Missing requirements: ${R}${still_missing[*]}${N}"
+            echo -e "  ${D}───────────────────────────────────────────────${N}\n"
+            exit 1
         fi
     fi
 }
@@ -85,29 +88,30 @@ read_phase() {
 draw_progress() {
     local current="$1"
     local total="$2"
-    local width=22
+    local width=25
     local filled=$(( current * width / total ))
     local empty=$(( width - filled ))
     
-    local bar=""
-    for ((i=0; i<filled; i++)); do bar="${bar}█"; done
-    for ((i=0; i<empty; i++)); do bar="${bar}░"; done
+    local filled_bar=""
+    local empty_bar=""
+    for ((i=0; i<filled; i++)); do filled_bar="${filled_bar}━"; done
+    for ((i=0; i<empty; i++)); do empty_bar="${empty_bar}┄"; done
     
     local percent=$(( current * 100 / total ))
-    echo -e "  ${D}[${G}${bar}${D}] ${W}${percent}%%${N}"
+    echo -e "  ${D}▕${C}${filled_bar}${D}${empty_bar}▏ ${W}${percent}%%${N}"
 }
 
 phase_header() {
     local num="$1" title="$2"
     printf -v num "%d" "$num" 2>/dev/null
     echo ""
-    echo -e "  ${C}✦${N} ${W}PHASE ${num}/9${N} ${D}⬡${N} ${C}${title}${N}"
-    draw_progress "$num" "9"
-    echo -e "  ${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
+    echo -e "  ${O}❖${N}  ${W}PHASE ${num}/${total_phases:-9}${N} ${D}▸${N} ${C}${title}${N}"
+    draw_progress "$num" "${total_phases:-9}"
+    echo -e "  ${D}───────────────────────────────────────────────${N}"
 }
 
 phase_sep() {
-    echo -e "  ${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
+    echo -e "  ${D}───────────────────────────────────────────────${N}"
 }
 
 
@@ -115,24 +119,24 @@ run_tool() {
     local name="$1" out="$2" step="$3" total="$4"; shift 4
     if [[ -f "$out" && -s "$out" ]]; then
         local cnt; cnt=$(wc -l < "$out" 2>/dev/null || echo 0)
-        printf "  ${C}⏭${N}  ${D}[%02d/%02d]${N}  ${D}%-15s${N}  ${C}📁${N}  ${D}cached (%d records)${N}\n" "$step" "$total" "$name" "$cnt"
+        printf "  ${D}│${N}  ${C}⏭${N}  ${D}[%02d/%02d]${N}  %-14s  ${D}cached (${C}%d${D} records)${N}\n" "$step" "$total" "$name" "$cnt"
         return 0
     fi
 
     local t_start elapsed
     t_start=$(date +%s)
-    printf "  ${C}✦${N}  ${D}[%02d/%02d]${N}  ${W}%-15s${N}  ${O}⌛${N}  ${D}scanning${N}" "$step" "$total" "$name"
+    printf "  ${D}│${N}  ${O}●${N}  ${D}[%02d/%02d]${N}  %-14s  ${D}active...${N}" "$step" "$total" "$name"
 
     timeout 300 "$@" &
     local pid=$!
-    local spin=('◐' '◓' '◑' '◒')
+    local spin=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local i=0
 
     while kill -0 "$pid" 2>/dev/null; do
         elapsed=$(($(date +%s) - t_start))
-        printf "\r  ${C}✦${N}  ${D}[%02d/%02d]${N}  ${W}%-15s${N}  ${O}%b${N}  ${D}scanning (%2ds)${N}" "$step" "$total" "$name" "${spin[$i]}" "$elapsed"
-        i=$(( (i + 1) % 4 ))
-        sleep 0.2
+        printf "\r  ${D}│${N}  ${O}%b${N}  ${D}[%02d/%02d]${N}  %-14s  ${D}active (${C}%ds${D})${N}" "${spin[$i]}" "$step" "$total" "$name" "$elapsed"
+        i=$(( (i + 1) % 10 ))
+        sleep 0.1
     done
 
     wait "$pid"
@@ -142,11 +146,11 @@ run_tool() {
     [[ -f "$out" ]] && count=$(wc -l < "$out" 2>/dev/null || echo 0)
 
     if [[ $rc -eq 0 && "$count" -gt 0 ]]; then
-        printf "\r  ${G}✔${N}  ${D}[%02d/%02d]${N}  ${W}%-15s${N}  ${G}⚡${N}  ${G}%-5d${N} ${D}records  (%2ds)${N}\n" "$step" "$total" "$name" "$count" "$elapsed"
+        printf "\r  ${D}│${N}  ${G}✔${N}  ${D}[%02d/%02d]${N}  %-14s  ${G}%-5d${N} ${D}found  (${C}%ds${D})${N}\n" "$step" "$total" "$name" "$count" "$elapsed"
     elif [[ $rc -eq 0 && "$count" -eq 0 ]]; then
-        printf "\r  ${C}✔${N}  ${D}[%02d/%02d]${N}  ${D}%-15s${N}  ${Y}∼${N}  ${Y}%-5d${N} ${D}records  (%2ds)${N}\n" "$step" "$total" "$name" "0" "$elapsed"
+        printf "\r  ${D}│${N}  ${C}✔${N}  ${D}[%02d/%02d]${N}  %-14s  ${D}empty  (${C}%ds${D})${N}\n" "$step" "$total" "$name" "$elapsed"
     else
-        printf "\r  ${R}✖${N}  ${D}[%02d/%02d]${N}  ${W}%-15s${N}  ${R}❌${N}  ${R}error (exit %d)  (%2ds)${N}\n" "$step" "$total" "$name" "$rc" "$elapsed"
+        printf "\r  ${D}│${N}  ${R}✘${N}  ${D}[%02d/%02d]${N}  %-14s  ${R}failed (${C}%ds${D})${N}\n" "$step" "$total" "$name" "$elapsed"
     fi
     return $rc
 }
@@ -786,14 +790,23 @@ list_sessions() {
 }
 
 show_banner() {
+    # Custom neon colors for banner
+    local C1='\033[38;5;201m' # Pink/Purple
+    local C2='\033[38;5;135m' # Purple-blue
+    local C3='\033[38;5;33m'  # Bright Blue
+    local C4='\033[38;5;51m'  # Neon Cyan
+    local WH='\033[1;37m'
+    local DG='\033[90m'
+    local RST='\033[0m'
+    
     echo -e ""
-    echo -e "  ${R} ___   _   ___ _  _   _  _ _  ___ _  _ _____ ${N}"
-    echo -e "  ${R}|   \\ /_\\ | _ \\ |/ /  | |/ / \\| |_| |_|_   _|${N}"
-    echo -e "  ${R}| |) / _ \\|   / ' <   | ' <| .\` | | ' \\ | |  ${N}"
-    echo -e "  ${R}|___/_/ \\_\\_|_\\_|\\_\\  |_|\\_\\_|\\_|_|_||_||_|  ${N}"
-    echo -e "  ${D}🔥 Reconnaissance Automation Framework${N}"
-    echo -e "  ${D}v${VERSION} - Dark-Knight Security Toolkit${N}"
-    echo -e "  ${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
+    echo -e "  ${C1} ___   _   ___ _  _   _  _ _  ___ _  _ _____ ${RST}"
+    echo -e "  ${C2} |   \\ /_\\ | _ \\ |/ /  | |/ / \\| |_| |_|_   _|${RST}"
+    echo -e "  ${C3} | |) / _ \\|   / ' <   | ' <| .\` | | ' \\ | |  ${RST}"
+    echo -e "  ${C4} |___/_/ \\_\\_|_\\_|\\_\\  |_|\\_\\_|\\_|_|_||_||_|  ${RST}"
+    echo -e "  ${DG}  ───────────────────────────────────────────────${RST}"
+    echo -e "  ${DG}  ⚡ ${WH}CYBERSECURITY RECON & DETECTION PIPELINE${RST} ${DG}│${RST} ${C4}v${VERSION}${RST}"
+    echo -e "  ${DG}  ───────────────────────────────────────────────${RST}"
     echo -e ""
 }
 
