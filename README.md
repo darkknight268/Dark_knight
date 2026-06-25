@@ -13,6 +13,10 @@
   A state-of-the-art, fully automated cybersecurity reconnaissance and bug hunting pipeline. Orchestrates <b>27 subdomain sources</b>, multi-threaded live host analysis, and active vulnerability audits into a stunning HTML Command Dashboard.
 </p>
 
+<p align="center">
+  <img src="assets/dashboard_preview.png" alt="Dark-Knight Dashboard Preview" width="850" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+</p>
+
 ```text
    ___   _   ___ _  _   _  _ _  ___ _  _ _____ 
   |   \ /_\ | _ \ |/ /  | |/ / \| |_| |_|_   _|
