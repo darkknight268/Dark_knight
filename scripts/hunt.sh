@@ -9,6 +9,35 @@ set -e
 TARGET=$1
 DATA_DIR=${2:-/tmp/bug-hunter-$TARGET}
 
+# Colors
+R="\033[31m" G="\033[32m" Y="\033[33m" B="\033[34m" C="\033[36m"
+W="\033[1;37m" D="\033[2m" O="\033[0m"
+
+draw_progress() {
+  local current=$1
+  local total=$2
+  local width=22
+  local filled=$(( current * width / total ))
+  local empty=$(( width - filled ))
+  
+  local bar=""
+  for ((i=0; i<filled; i++)); do bar="${bar}█"; done
+  for ((i=0; i<empty; i++)); do bar="${bar}░"; done
+  
+  local percent=$(( current * 100 / total ))
+  echo -e "  ${D}[${G}${bar}${D}] ${W}${percent}%${O}"
+}
+
+phase_header() {
+  local num=$1 title=$2
+  echo -e ""
+  echo -e "  ${C}✦${O} ${W}PHASE $num/4${O} ${D}⬡${O} ${C}$title${O}"
+  draw_progress "$num" "4"
+  echo -e "  ${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${O}"
+}
+
+
+
 if [ -z "$TARGET" ]; then
     echo "Usage: $0 <target> [data_dir]"
     echo ""
@@ -17,21 +46,22 @@ if [ -z "$TARGET" ]; then
     exit 1
 fi
 
-echo "=========================================="
-echo "     BUG HUNTER - HUNTING SESSION        "
-echo "=========================================="
-echo "[*] Target: $TARGET"
-echo "[*] Data: $DATA_DIR"
-echo ""
+echo -e ""
+echo -e "  ${C}⚡ ${W}BUG HUNTER${O} ${D}│${O} ${B}HUNTING SESSION${O}"
+echo -e "  ${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${O}"
+echo -e "  ${D}Target:${O}     ${W}$TARGET${O}"
+echo -e "  ${D}Workspace:${O}  ${C}$DATA_DIR${O}"
+echo -e "  ${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${O}"
+echo -e ""
+
 
 # Setup output
 HUNT_DIR="$DATA_DIR/hunt-results"
-mkdir -p "$HUNT_DIR"/{js-analysis,endpoints,vulns,secrets, takeover}
+mkdir -p "$HUNT_DIR"/{js-analysis,endpoints,vulns,secrets,takeover}
+
 
 # ===== 1. JS ANALYSIS (JSMAX) =====
-echo "[+] ======================================="
-echo "[+] PHASE 1: JS ANALYSIS (JSMAX)"
-echo "[+] ======================================="
+phase_header 1 "JS ANALYSIS (JSMAX)"
 
 # Find JS files
 JS_FILES=$(find "$DATA_DIR" -type f -name "*.js" 2>/dev/null | head -100)
@@ -78,12 +108,11 @@ else
 fi
 
 # ===== 2. ENDPOINT ANALYSIS =====
-echo "[+] ======================================="
-echo "[+] PHASE 2: ENDPOINT ANALYSIS"
-echo "[+] ======================================="
+phase_header 2 "ENDPOINT ANALYSIS"
 
-# Find all URLs/endpoints
-URLS_FILE=$(find "$DATA_DIR" -type f \( -name "*.txt" -o -name "*.json" \) 2>/dev/null | xargs grep -l "http" 2>/dev/null | head -1)
+# Find all URLs/endpoints (excluding results)
+URLS_FILE=$(find "$DATA_DIR" -not -path "*/hunt-results/*" -type f \( -name "*.txt" -o -name "*.json" \) 2>/dev/null | xargs grep -l "http" 2>/dev/null | head -1)
+
 
 if [ -f "$URLS_FILE" ]; then
     echo "[*] Found URL data: $URLS_FILE"
@@ -110,9 +139,7 @@ if [ -f "$URLS_FILE" ]; then
 fi
 
 # ===== 3. SUBDOMAIN ANALYSIS =====
-echo "[+] ======================================="
-echo "[+] PHASE 3: SUBDOMAIN ANALYSIS"
-echo "[+] ======================================="
+phase_header 3 "SUBDOMAIN ANALYSIS"
 
 SUBS_FILE=$(find "$DATA_DIR" -type f -name "subs*.txt" -o -name "*domains*" 2>/dev/null | head -1)
 
@@ -135,9 +162,7 @@ if [ -f "$SUBS_FILE" ]; then
 fi
 
 # ===== 4. VULNERABILITY INDICATORS =====
-echo "[+] ======================================="
-echo "[+] PHASE 4: VULNERABILITY INDICATORS"
-echo "[+] ======================================="
+phase_header 4 "VULNERABILITY INDICATORS"
 
 # Check for common vuln patterns in URLs
 if [ -f "$URLS_FILE" ]; then
@@ -157,40 +182,37 @@ if [ -f "$URLS_FILE" ]; then
 fi
 
 # ===== SUMMARY =====
-echo ""
-echo "=========================================="
-echo "           HUNT COMPLETE                  "
-echo "=========================================="
-echo ""
-echo "[*] Results saved to: $HUNT_DIR/"
-echo ""
-echo "=== FINDINGS SUMMARY ==="
+echo -e ""
+echo -e "  ${G}✔${O} ${W}HUNT COMPLETE${O}"
+echo -e "  ${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${O}"
+echo -e "  ${D}Results saved to ▸${O} ${C}$HUNT_DIR/${O}"
+echo -e "  ${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${O}"
+echo -e ""
+echo -e "  ${C}📁 ENDPOINTS${O}"
+[ -f "$HUNT_DIR/endpoints/api.txt" ] && printf "     %-15s ${D}▸${O}  ${W}%s${O} URLs\n" "API" "$(wc -l < "$HUNT_DIR/endpoints/api.txt")"
+[ -f "$HUNT_DIR/endpoints/admin.txt" ] && printf "     %-15s ${D}▸${O}  ${W}%s${O} URLs\n" "Admin" "$(wc -l < "$HUNT_DIR/endpoints/admin.txt")"
+[ -f "$HUNT_DIR/endpoints/auth.txt" ] && printf "     %-15s ${D}▸${O}  ${W}%s${O} URLs\n" "Auth" "$(wc -l < "$HUNT_DIR/endpoints/auth.txt")"
+[ -f "$HUNT_DIR/endpoints/upload.txt" ] && printf "     %-15s ${D}▸${O}  ${W}%s${O} URLs\n" "Upload" "$(wc -l < "$HUNT_DIR/endpoints/upload.txt")"
 
-echo ""
-echo "📁 ENDPOINTS:"
-[ -f "$HUNT_DIR/endpoints/api.txt" ] && echo "   API: $(wc -l < "$HUNT_DIR/endpoints/api.txt") endpoints"
-[ -f "$HUNT_DIR/endpoints/admin.txt" ] && echo "   Admin: $(wc -l < "$HUNT_DIR/endpoints/admin.txt") endpoints"
-[ -f "$HUNT_DIR/endpoints/auth.txt" ] && echo "   Auth: $(wc -l < "$HUNT_DIR/endpoints/auth.txt") endpoints"
-[ -f "$HUNT_DIR/endpoints/upload.txt" ] && echo "   Upload: $(wc -l < "$HUNT_DIR/endpoints/upload.txt") endpoints"
+echo -e ""
+echo -e "  ${Y}🔐 SECRETS${O}"
+[ -f "$HUNT_DIR/secrets/aws_keys.txt" ] && printf "     %-15s ${D}▸${O}  ${R}%s${O} matches\n" "AWS Keys" "$(wc -l < "$HUNT_DIR/secrets/aws_keys.txt")"
+[ -f "$HUNT_DIR/secrets/jwt.txt" ] && printf "     %-15s ${D}▸${O}  ${Y}%s${O} matches\n" "JWT Tokens" "$(wc -l < "$HUNT_DIR/secrets/jwt.txt")"
+[ -f "$HUNT_DIR/secrets/api_keys.txt" ] && printf "     %-15s ${D}▸${O}  ${Y}%s${O} matches\n" "API Keys" "$(wc -l < "$HUNT_DIR/secrets/api_keys.txt")"
+[ -f "$HUNT_DIR/secrets/s3_buckets.txt" ] && printf "     %-15s ${D}▸${O}  ${C}%s${O} matches\n" "S3 Buckets" "$(wc -l < "$HUNT_DIR/secrets/s3_buckets.txt")"
 
-echo ""
-echo "🔐 SECRETS:"
-[ -f "$HUNT_DIR/secrets/aws_keys.txt" ] && echo "   AWS Keys: $(wc -l < "$HUNT_DIR/secrets/aws_keys.txt")"
-[ -f "$HUNT_DIR/secrets/jwt.txt" ] && echo "   JWTs: $(wc -l < "$HUNT_DIR/secrets/jwt.txt")"
-[ -f "$HUNT_DIR/secrets/api_keys.txt" ] && echo "   API Keys: $(wc -l < "$HUNT_DIR/secrets/api_keys.txt")"
-[ -f "$HUNT_DIR/secrets/s3_buckets.txt" ] && echo "   S3 Buckets: $(wc -l < "$HUNT_DIR/secrets/s3_buckets.txt")"
+echo -e ""
+echo -e "  ${R}⚡ VULN PARAMETERS${O}"
+[ -f "$HUNT_DIR/vulns/xss_params.txt" ] && printf "     %-15s ${D}▸${O}  ${W}%s${O} candidates\n" "XSS" "$(wc -l < "$HUNT_DIR/vulns/xss_params.txt")"
+[ -f "$HUNT_DIR/vulns/sqli_params.txt" ] && printf "     %-15s ${D}▸${O}  ${W}%s${O} candidates\n" "SQLi" "$(wc -l < "$HUNT_DIR/vulns/sqli_params.txt")"
+[ -f "$HUNT_DIR/vulns/ssrf_params.txt" ] && printf "     %-15s ${D}▸${O}  ${W}%s${O} candidates\n" "SSRF" "$(wc -l < "$HUNT_DIR/vulns/ssrf_params.txt")"
+[ -f "$HUNT_DIR/vulns/lfi_params.txt" ] && printf "     %-15s ${D}▸${O}  ${W}%s${O} candidates\n" "LFI" "$(wc -l < "$HUNT_DIR/vulns/lfi_params.txt")"
 
-echo ""
-echo "⚡ VULN PARAMETERS:"
-[ -f "$HUNT_DIR/vulns/xss_params.txt" ] && echo "   XSS: $(wc -l < "$HUNT_DIR/vulns/xss_params.txt") params"
-[ -f "$HUNT_DIR/vulns/sqli_params.txt" ] && echo "   SQLi: $(wc -l < "$HUNT_DIR/vulns/sqli_params.txt") params"
-[ -f "$HUNT_DIR/vulns/ssrf_params.txt" ] && echo "   SSRF: $(wc -l < "$HUNT_DIR/vulns/ssrf_params.txt") params"
-[ -f "$HUNT_DIR/vulns/lfi_params.txt" ] && echo "   LFI: $(wc -l < "$HUNT_DIR/vulns/lfi_params.txt") params"
+echo -e ""
+echo -e "  ${B}🎯 SUBDOMAIN TAKEOVER${O}"
+[ -f "$HUNT_DIR/takeover/dev_staging.txt" ] && printf "     %-15s ${D}▸${O}  ${W}%s${O} targets\n" "Dev/Staging" "$(wc -l < "$HUNT_DIR/takeover/dev_staging.txt")"
+[ -f "$HUNT_DIR/takeover/cloud.txt" ] && printf "     %-15s ${D}▸${O}  ${W}%s${O} targets\n" "Cloud" "$(wc -l < "$HUNT_DIR/takeover/cloud.txt")"
 
-echo ""
-echo "🎯 SUBDOMAIN TAKEOVER:"
-[ -f "$HUNT_DIR/takeover/dev_staging.txt" ] && echo "   Dev/Staging: $(wc -l < "$HUNT_DIR/takeover/dev_staging.txt")"
-[ -f "$HUNT_DIR/takeover/cloud.txt" ] && echo "   Cloud: $(wc -l < "$HUNT_DIR/takeover/cloud.txt")"
-
-echo ""
-echo "=========================================="
+echo -e ""
+echo -e "  ${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${O}"
+echo -e ""

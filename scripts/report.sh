@@ -100,3 +100,9 @@ $(cat "$HUNT_DIR/takeover/cloud.txt" 2>/dev/null | head -20 || echo "_None found
 " > "$REPORT"
 
 echo "[+] Report generated: $REPORT"
+
+# Execute Python Dashboard compilation
+DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -f "$DIR/generate_dashboard.py" ]; then
+    python3 "$DIR/generate_dashboard.py" "$TARGET" "$DATA_DIR" || echo "[-] Failed to generate Web Dashboard"
+fi

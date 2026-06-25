@@ -15,7 +15,7 @@ Fully automated bug bounty reconnaissance pipeline — 9 phases, 20+ subdomain s
 
 | Phase | Description |
 |-------|-------------|
-| **1** | Subdomain enumeration (20 sources) |
+| **1** | Subdomain enumeration (27 sources) |
 | **2** | IP resolution, DNS deep dive, takeover checks |
 | **3** | Live web probing with status-code separation |
 | **4** | Technology & WAF fingerprinting |

@@ -1,0 +1,56 @@
+#!/bin/bash
+# Bug Hunter Recon - API Key Configuration (example)
+# Copy to recon.cfg and fill in your keys.
+# Source: https://github.com/darkknight268/Dark-Knight
+#
+# All keys are optional. Missing keys = source silently skipped.
+# The script won't fail — you'll just get fewer results.
+
+# Chaos (free) — https://chaos.projectdiscovery.io
+export CHAOS_API_KEY=""
+
+# Censys (free tier) — https://search.censys.io/account/api
+export CENSYS_API_ID=""
+export CENSYS_API_SECRET=""
+
+# Shodan (free tier) — https://account.shodan.io
+export SHODAN_API_KEY=""
+
+# VirusTotal (free tier) — https://www.virustotal.com/gui/my-apikey
+export VIRUSTOTAL_API_KEY=""
+
+# GitHub (free) — https://github.com/settings/tokens
+export GITHUB_TOKEN=""
+
+# FullHunt (free tier) — https://fullhunt.io
+export FULLHUNT_API_KEY=""
+
+# AlienVault OTX (free) — https://otx.alienvault.com
+export ALIENVAULT_API_KEY=""
+
+# BeVigil (free tier) — https://bevigil.com
+export BEVIGIL_API_KEY=""
+
+# BufferOver (free) — https://dns.bufferover.run
+export BUFFEROVER_API_KEY=""
+
+# DNSDumpster (free)
+export DNSDUMPSTER_API_KEY=""
+
+# FOFA (free tier) — https://fofa.info
+export FOFA_API_KEY=""
+
+# LeakIX (free) — https://leakix.net
+export LEAKIX_API_KEY=""
+
+# WhoIsXMLAPI (free tier) — https://whoisxmlapi.com
+export WHOISXML_API_KEY=""
+
+# ZoomEye (free tier) — https://zoomeye.org
+export ZOOMEYE_API_KEY=""
+
+# RedHunt Labs (free tier) — https://reconapi.redhuntlabs.com
+export REDHUNT_API_KEY=""
+
+# SecurityTrails (PAID) — https://securitytrails.com (not free)
+export SECURITYTRAILS_API_KEY=""
