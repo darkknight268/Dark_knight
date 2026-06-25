@@ -72,34 +72,36 @@ if [ -n "$JS_FILES" ]; then
         echo "    [*] Analyzing: $(basename $JS_FILE)"
 
         # Check for secrets using grep patterns
+        # Secrets are stored as: MATCHED_VALUE|||SOURCE_JS_FILE
+        # This lets the dashboard display the exact JS file URL where the secret was found
         BASENAME=$(basename "$JS_FILE")
 
         # AWS Keys
-        grep -hE "(AKIA|ASIA)[0-9A-Z]{16}" "$JS_FILE" 2>/dev/null >> "$HUNT_DIR/secrets/aws_keys.txt" || true
+        grep -oE "(AKIA|ASIA)[0-9A-Z]{16}" "$JS_FILE" 2>/dev/null | while IFS= read -r match; do printf '%s|||%s\n' "$match" "$JS_FILE"; done >> "$HUNT_DIR/secrets/aws_keys.txt" || true
 
         # Azure Keys
-        grep -hE "(DefaultEndpointsProtocol=https|BlobEndpoint|AccountName=)" "$JS_FILE" 2>/dev/null >> "$HUNT_DIR/secrets/azure.txt" || true
+        grep -oE "(DefaultEndpointsProtocol=https|BlobEndpoint|AccountName=)[^\s\"'<>]*" "$JS_FILE" 2>/dev/null | while IFS= read -r match; do printf '%s|||%s\n' "$match" "$JS_FILE"; done >> "$HUNT_DIR/secrets/azure.txt" || true
 
         # GCP Keys
-        grep -hE "(AIza[0-9A-Za-z\\-_]{35})" "$JS_FILE" 2>/dev/null >> "$HUNT_DIR/secrets/gcp.txt" || true
+        grep -oE "(AIza[0-9A-Za-z\-_]{35})" "$JS_FILE" 2>/dev/null | while IFS= read -r match; do printf '%s|||%s\n' "$match" "$JS_FILE"; done >> "$HUNT_DIR/secrets/gcp.txt" || true
 
         # JWT Tokens
-        grep -hE "eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*" "$JS_FILE" 2>/dev/null >> "$HUNT_DIR/secrets/jwt.txt" || true
+        grep -oE "eyJ[A-Za-z0-9_-]*\.eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]*" "$JS_FILE" 2>/dev/null | while IFS= read -r match; do printf '%s|||%s\n' "$match" "$JS_FILE"; done >> "$HUNT_DIR/secrets/jwt.txt" || true
 
         # API Keys (generic)
-        grep -hE "(api[_-]?key|apikey|API[_-]?KEY)[\"']?\s*[:=]\s*[\"'][A-Za-z0-9_\-]{20,}" "$JS_FILE" 2>/dev/null >> "$HUNT_DIR/secrets/api_keys.txt" || true
+        grep -oE "(api[_-]?key|apikey|API[_-]?KEY)[\"']?\s*[:=]\s*[\"'][A-Za-z0-9_\-]{20,}" "$JS_FILE" 2>/dev/null | while IFS= read -r match; do printf '%s|||%s\n' "$match" "$JS_FILE"; done >> "$HUNT_DIR/secrets/api_keys.txt" || true
 
         # Hardcoded Passwords
-        grep -hE "(password|passwd|pwd)[\"']?\s*[:=]\s*[\"'][^&]{4,}" "$JS_FILE" 2>/dev/null >> "$HUNT_DIR/secrets/passwords.txt" || true
+        grep -oE "(password|passwd|pwd)[\"']?\s*[:=]\s*[\"'][^&]{4,}" "$JS_FILE" 2>/dev/null | while IFS= read -r match; do printf '%s|||%s\n' "$match" "$JS_FILE"; done >> "$HUNT_DIR/secrets/passwords.txt" || true
 
         # Internal Endpoints
-        grep -hE "(https?://)[^\"'<>]+(internal|admin|api|dev|staging)" "$JS_FILE" 2>/dev/null | sort -u >> "$HUNT_DIR/endpoints/internal_endpoints.txt" || true
+        grep -oE "(https?://)[^\"'<>]+(internal|admin|api|dev|staging)" "$JS_FILE" 2>/dev/null | sort -u >> "$HUNT_DIR/endpoints/internal_endpoints.txt" || true
 
         # S3 Buckets
-        grep -hE "[a-z0-9\-\.]+\.s3\.amazonaws\.com" "$JS_FILE" 2>/dev/null >> "$HUNT_DIR/secrets/s3_buckets.txt" || true
+        grep -oE "[a-z0-9\-\.]+\.s3\.amazonaws\.com" "$JS_FILE" 2>/dev/null | while IFS= read -r match; do printf '%s|||%s\n' "$match" "$JS_FILE"; done >> "$HUNT_DIR/secrets/s3_buckets.txt" || true
 
         # Firebase URLs
-        grep -hE "firebaseio\.com|firebasestorage\.googleapis\.com" "$JS_FILE" 2>/dev/null >> "$HUNT_DIR/secrets/firebase.txt" || true
+        grep -oE "firebaseio\.com[^\"'<> ]*|firebasestorage\.googleapis\.com[^\"'<> ]*" "$JS_FILE" 2>/dev/null | while IFS= read -r match; do printf '%s|||%s\n' "$match" "$JS_FILE"; done >> "$HUNT_DIR/secrets/firebase.txt" || true
     done
 
     echo "[+] JS Analysis complete"

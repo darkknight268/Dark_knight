@@ -179,10 +179,21 @@ def main():
     for key, filepath in secret_files.items():
         db["secrets"][key] = []
         lines = read_lines_safe(filepath)
+        # Deduplicate by full line (value|||source pair)
         unique_matches = set(lines)
         for match in unique_matches:
-            db["secrets"][key].append({"value": match, "source": "JS Static Asset"})
-            secrets_count += 1
+            # Format: SECRET_VALUE|||/path/to/source.js  (written by hunt.sh)
+            # Fallback: plain value with no source info
+            if "|||" in match:
+                value, source = match.rsplit("|||", 1)
+                value = value.strip()
+                source = source.strip()
+            else:
+                value = match.strip()
+                source = "JS Static Asset"
+            if value:
+                db["secrets"][key].append({"value": value, "source": source})
+                secrets_count += 1
 
     db["stats"]["secrets"] = secrets_count
 

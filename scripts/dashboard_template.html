@@ -1556,18 +1556,26 @@
                                     <thead>
                                         <tr>
                                             <th>Secret / Leak Found</th>
-                                            <th>File Source</th>
+                                            <th>Source JS File</th>
                                             <th>Action</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${items.map(item => `
+                                        ${items.map(item => {
+                                            const isUrl = item.source && (item.source.startsWith('http') || item.source.startsWith('/') || item.source.includes('.js'));
+                                            const srcDisplay = isUrl
+                                                ? `<a href="${item.source}" target="_blank" title="${item.source}" style="color:var(--primary);text-decoration:none;font-family:'JetBrains Mono',monospace;font-size:0.78rem;word-break:break-all;">${item.source}</a>`
+                                                : `<span style="font-size:0.8rem; color:var(--text-secondary)">${item.source || 'N/A'}</span>`;
+                                            return `
                                             <tr>
-                                                <td><span style="font-family:'JetBrains Mono', monospace; font-size:0.85rem; color:var(--danger)">${item.value}</span></td>
-                                                <td><span style="font-size:0.8rem; color:var(--text-secondary)">${item.source || 'N/A'}</span></td>
-                                                <td><button class="btn btn-secondary btn-sm" onclick="copyText('${item.value.replace(/'/g, "\\'")}', this)">Copy</button></td>
-                                            </tr>
-                                        `).join('')}
+                                                <td><span style="font-family:'JetBrains Mono', monospace; font-size:0.85rem; color:var(--danger);word-break:break-all;">${item.value}</span></td>
+                                                <td>${srcDisplay}</td>
+                                                <td style="white-space:nowrap">
+                                                    <button class="btn btn-secondary btn-sm" onclick="copyText('${item.value.replace(/'/g, "\'")}', this)">Copy Secret</button>
+                                                    ${isUrl ? `<button class="btn btn-secondary btn-sm" style="margin-left:4px" onclick="copyText('${item.source.replace(/'/g, "\'")}', this)">Copy URL</button>` : ''}
+                                                </td>
+                                            </tr>`;
+                                        }).join('')}
                                     </tbody>
                                 </table>
                             </div>
@@ -1594,12 +1602,24 @@
                 return;
             }
 
+            // Payload map per vulnerability type
+            const payloadMap = {
+                xss:  { label: 'XSS',  payloads: ['<script>alert(1)</script>', '"><img src=x onerror=alert(1)>', "'><svg/onload=alert(1)>"] },
+                sqli: { label: 'SQLi', payloads: ["' OR '1'='1", "1' OR 1=1--", "' UNION SELECT NULL,NULL--"] },
+                ssrf: { label: 'SSRF', payloads: ['http://169.254.169.254/latest/meta-data/', 'http://127.0.0.1/', 'http://[::1]/'] },
+                lfi:  { label: 'LFI',  payloads: ['../../../../etc/passwd', '....//....//....//etc/passwd', '%2e%2e%2f%2e%2e%2fetc%2fpasswd'] }
+            };
+
             container.innerHTML = keys.map((key, index) => {
                 const items = vulns[key] || [];
                 if (items.length === 0) return '';
 
-                const keyFormatted = key.toUpperCase().replace('_', ' ') + ' PARAMETERS';
+                const keyFormatted = key.toUpperCase().replace(/_/g, ' ') + ' PARAMETERS';
                 const colorBadge = key.includes('sqli') || key.includes('rce') ? 'badge-400' : 'badge-300';
+
+                // Pick matching payload type
+                const pType = key.includes('xss') ? 'xss' : key.includes('sqli') ? 'sqli' : key.includes('ssrf') ? 'ssrf' : key.includes('lfi') ? 'lfi' : null;
+                const pInfo = pType ? payloadMap[pType] : null;
 
                 return `
                     <div class="accordion-item" onclick="toggleAccordion(this)">
@@ -1608,21 +1628,39 @@
                             <span class="accordion-toggle-icon">▼</span>
                         </div>
                         <div class="accordion-content" onclick="event.stopPropagation()">
+                            ${pInfo ? `
+                            <div style="margin-top:1rem;padding:0.85rem 1rem;background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.18);border-radius:10px;">
+                                <div style="font-size:0.78rem;color:var(--warning);font-weight:600;margin-bottom:0.5rem;">🧪 ${pInfo.label} TEST PAYLOADS — copy &amp; append to parameter value</div>
+                                <div style="display:flex;flex-wrap:wrap;gap:0.4rem;">
+                                    ${pInfo.payloads.map(p => `
+                                        <button class="btn btn-secondary btn-sm" style="font-family:'JetBrains Mono',monospace;font-size:0.78rem;color:var(--warning);border-color:rgba(245,158,11,0.25);" onclick="copyText(${JSON.stringify(p)}, this)">📋 ${p.length > 40 ? p.slice(0,40)+'…' : p}</button>
+                                    `).join('')}
+                                </div>
+                            </div>` : ''}
                             <div class="table-container" style="margin-top: 1rem">
                                 <table>
                                     <thead>
                                         <tr>
-                                            <th>Target URL / Parameter Path</th>
-                                            <th>Action</th>
+                                            <th>Full Endpoint URL</th>
+                                            ${pInfo ? '<th>Try Payload</th>' : ''}
+                                            <th>Actions</th>
                                         </tr>
                                     </thead>
                                     <tbody>
-                                        ${items.map(item => `
+                                        ${items.map(item => {
+                                            // Build try-payload URLs by appending each payload to the endpoint
+                                            const tryLinks = pInfo ? pInfo.payloads.map((p, pi) =>
+                                                `<a href="${item}${encodeURIComponent(p)}" target="_blank" style="display:inline-block;margin:2px;padding:3px 8px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.22);border-radius:6px;color:var(--warning);font-size:0.78rem;text-decoration:none;font-family:'JetBrains Mono',monospace;">Payload ${pi+1} ↗</a>`
+                                            ).join('') : '';
+                                            return `
                                             <tr>
-                                                <td><span style="font-family:'JetBrains Mono', monospace; font-size:0.85rem; color:var(--text-primary)">${item}</span></td>
-                                                <td><button class="btn btn-secondary btn-sm" onclick="copyText('${item.replace(/'/g, "\\'")}', this)">Copy Link</button></td>
-                                            </tr>
-                                        `).join('')}
+                                                <td><a href="${item}" target="_blank" style="color:var(--primary);text-decoration:none;font-family:'JetBrains Mono',monospace;font-size:0.82rem;word-break:break-all;">${item}</a></td>
+                                                ${pInfo ? `<td style="white-space:nowrap">${tryLinks}</td>` : ''}
+                                                <td style="white-space:nowrap">
+                                                    <button class="btn btn-secondary btn-sm" onclick="copyText(${JSON.stringify(item)}, this)">Copy URL</button>
+                                                </td>
+                                            </tr>`;
+                                        }).join('')}
                                     </tbody>
                                 </table>
                             </div>
