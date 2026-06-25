@@ -33,6 +33,59 @@ def read_json_lines_safe(file_path):
         print(f"[-] Error reading json lines {file_path}: {e}")
     return results
 
+def resolve_remote_url(local_path, data_dir):
+    import hashlib
+    local_path_str = str(local_path)
+    filename = Path(local_path).name
+    stem = Path(local_path).stem
+    
+    # Load js.urls, jsfile.txt, downloaded.txt, crawled.txt to find remote URL mapping
+    urls = []
+    for filename_to_check in ["js.urls", "jsfile.txt", "downloaded.txt", "crawled.txt"]:
+        p = Path(data_dir) / filename_to_check
+        if p.exists():
+            urls.extend(read_lines_safe(p))
+        p_sub = Path(data_dir) / "hunt-results" / filename_to_check
+        if p_sub.exists():
+            urls.extend(read_lines_safe(p_sub))
+            
+    urls = list(set(urls))
+    
+    # Try 1: Match by MD5 hash of the URL
+    for url in urls:
+        url_clean = url.split("?")[0]
+        # Check standard MD5
+        if hashlib.md5(url.encode('utf-8')).hexdigest() == stem or hashlib.md5(url_clean.encode('utf-8')).hexdigest() == stem:
+            return url
+        # Check MD5 of protocol-stripped URL
+        url_stripped = url_clean.replace("https://", "").replace("http://", "")
+        if hashlib.md5(url_stripped.encode('utf-8')).hexdigest() == stem:
+            return url
+            
+    # Try 2: Suffix matching (e.g. local path ends in /js/app.js matching https://mock.com/js/app.js)
+    parts = Path(local_path).parts
+    for i in range(len(parts)):
+        suffix_path = "/".join(parts[i:])
+        if suffix_path.endswith(".js"):
+            for url in urls:
+                url_clean = url.split("?")[0]
+                if url_clean.endswith(suffix_path):
+                    return url
+                    
+    # Try 3: Filename matching (fallback)
+    for url in urls:
+        url_clean = url.split("?")[0]
+        if Path(url_clean).name == filename:
+            return url
+            
+    # Try 4: Domain reconstruction (if path contains target domain name)
+    for part in parts:
+        if "." in part and len(part) > 3 and not part.startswith("tmp") and not part.startswith("bug-hunter"):
+            idx = parts.index(part)
+            return "https://" + "/".join(parts[idx:])
+            
+    return local_path_str
+
 def main():
     if len(sys.argv) < 3:
         print("Usage: generate_dashboard.py <target> <data_dir>")
@@ -188,6 +241,7 @@ def main():
                 value, source = match.rsplit("|||", 1)
                 value = value.strip()
                 source = source.strip()
+                source = resolve_remote_url(source, data_dir)
             else:
                 value = match.strip()
                 source = "JS Static Asset"
