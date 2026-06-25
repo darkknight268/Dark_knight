@@ -1609,7 +1609,7 @@
 
             // Payload map per vulnerability type
             // NOTE: <\/script> uses the JS escape \/ === / so the runtime string is correct,
-            //       but the HTML parser never sees a literal </script> token here.
+            //       but the HTML parser never sees a literal closing script tag here.
             const payloadMap = {
                 xss:  { label: 'XSS',  payloads: ['&lt;script&gt;alert(1)&lt;\/script&gt;', '">&lt;img src=x onerror=alert(1)&gt;', "'>&lt;svg\/onload=alert(1)&gt;"] },
                 sqli: { label: 'SQLi', payloads: ["' OR '1'='1", "1' OR 1=1--", "' UNION SELECT NULL,NULL--"] },
