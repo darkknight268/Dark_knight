@@ -1243,7 +1243,12 @@
 
     <!-- DATA INJECTION PLACEHOLDER -->
     <script>
-        const targetData = {DATA_PLACEHOLDER};
+        let targetData = {};
+        try {
+            targetData = {DATA_PLACEHOLDER};
+        } catch (e) {
+            console.warn('Dashboard opened without compiled data. Running in template mode.', e);
+        }
     </script>
 
     <!-- JS Logic -->
