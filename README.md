@@ -14,7 +14,7 @@
 </p>
 
 <p align="center">
-  <img src="assets/dashboard_preview.gif" alt="Dark-Knight Dashboard Preview" width="850" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
+  <img src="assets/dashboard_preview.png" alt="Dark-Knight Dashboard Preview" width="850" style="border-radius: 12px; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 10px 30px rgba(0,0,0,0.5);">
 </p>
 
 ```text
