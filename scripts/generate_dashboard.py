@@ -132,10 +132,10 @@ def main():
             domain_clean = domain.replace("https://", "").replace("http://", "").split(":")[0]
             probed_domains[domain_clean] = {
                 "domain": domain_clean,
-                "status": r.get("status_code"),
-                "ips": r.get("ip"),
-                "tech": r.get("tech", []),
-                "cname": r.get("cname", "")
+                "status": r.get("status-code"),
+                "ips": r.get("host"),
+                "tech": [t for t in [r.get("webserver")] if t],
+                "cname": ""
             }
 
     # Fallback to dns_a.txt for DNS details
@@ -150,9 +150,19 @@ def main():
             ip = parts[-1].strip("[]")
             dns_ips[dom] = ip
 
-    # Read all unique subdomains
-    subs_uniq_file = data_dir / "subs.uniq"
-    all_subs = read_lines_safe(subs_uniq_file)
+    # Read all unique subdomains (try subs.txt first, then subs.uniq)
+    all_subs = read_lines_safe(data_dir / "subs.txt")
+    if not all_subs:
+        all_subs = read_lines_safe(data_dir / "subs.uniq")
+    # Fallback: extract unique domains from probe.json or alive.txt
+    if not all_subs and probed_domains:
+        all_subs = list(probed_domains.keys())
+    elif not all_subs:
+        alive_lines = read_lines_safe(data_dir / "alive.txt")
+        for url in alive_lines:
+            host = url.replace("https://", "").replace("http://", "").split("/")[0].split(":")[0]
+            if host not in all_subs:
+                all_subs.append(host)
     db["stats"]["subdomains"] = len(all_subs)
 
     for sub in all_subs:
@@ -171,10 +181,35 @@ def main():
     alive_file = data_dir / "alive.txt"
     db["stats"]["live_hosts"] = len(read_lines_safe(alive_file))
 
-    # 2. Parse Open Ports
+    # 2. Parse Open Ports (file or fallback to probe.json)
     open_ports_file = data_dir / "open_ports.txt"
     ports_lines = read_lines_safe(open_ports_file)
+    if not ports_lines:
+        # Fallback: extract unique port:host combos from probe.json
+        seen_ports = set()
+        for r in probe_results:
+            host = r.get("host") or r.get("input", "")
+            port = r.get("port", "")
+            if host and port:
+                entry = f"{host}:{port}"
+                if entry not in seen_ports:
+                    seen_ports.add(entry)
+                    ports_lines.append(entry)
     db["stats"]["open_ports"] = len(ports_lines)
+
+    # Build port_details: group ports by host IP
+    port_details = {}
+    for r in probe_results:
+        host = r.get("host") or ""
+        port = r.get("port", "")
+        scheme = r.get("scheme", "https")
+        if host and port:
+            label = f"{port}/{scheme.upper()}"
+            if host not in port_details:
+                port_details[host] = {"host": host, "ports": []}
+            if label not in port_details[host]["ports"]:
+                port_details[host]["ports"].append(label)
+    db["port_details"] = list(port_details.values())
 
     # 3. Parse Endpoints
     endpoint_files = {
@@ -215,6 +250,36 @@ def main():
             seen_endpoints.add(url)
 
     db["stats"]["endpoints"] = len(db["endpoints"])
+
+    # 3b. Parse Info Disclosure (sensitive file types in endpoints)
+    disclosure_categories = {
+        "PDF": (".pdf",),
+        "Excel": (".xls", ".xlsx", ".csv"),
+        "Word": (".doc", ".docx"),
+        "PowerPoint": (".pptx", ".ppt"),
+        "Text": (".txt", ".md", ".rst"),
+        "XML/JSON": (".xml", ".json"),
+        "SQL DB": (".sql", ".db", ".sqlite", ".sqlite3"),
+        "Config": (".config", ".ini", ".cfg", ".yml", ".yaml", ".env"),
+        "Backup": (".bak", ".backup", ".old", ".swp", ".sav"),
+        "Archive": (".zip", ".tar", ".tar.gz", ".tgz", ".gz", ".7z", ".rar", ".bz2", ".xz"),
+        "Disk/ISO": (".iso", ".img", ".vhd", ".vmdk"),
+        "Package": (".deb", ".rpm", ".apk", ".msi", ".dmg", ".jar", ".war"),
+        "Executable": (".exe", ".dll", ".bin", ".bat", ".sh", ".ps1", ".pyc"),
+        "Security": (".key", ".pem", ".crt", ".pub", ".asc", ".p12", ".jks", ".cert", ".csr"),
+        "Log/Temp": (".log", ".tmp", ".cache", ".secret", ".md5", ".out", ".err"),
+    }
+    disclosure_found = {}
+    for cat, exts in disclosure_categories.items():
+        matches = []
+        for ep in db["endpoints"]:
+            url_lower = ep["url"].lower()
+            if any(url_lower.endswith(ext) or f"{ext}?" in url_lower or f"{ext}/" in url_lower for ext in exts):
+                matches.append(ep["url"])
+        if matches:
+            disclosure_found[cat] = list(set(matches))
+    db["info_disclosure"] = disclosure_found
+    db["stats"]["info_disclosure"] = sum(len(v) for v in disclosure_found.values())
 
     # 4. Parse Secrets
     secret_files = {

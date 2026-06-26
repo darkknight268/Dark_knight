@@ -91,6 +91,107 @@ read_phase() {
     fi
 }
 
+DASHBOARD_TEMPLATE="$HOME/.local/share/hunt/dashboard_template.html"
+
+dashboard_init() {
+    local domain="$1" sd="$2"
+    local html="$sd/dashboard.html"
+    [[ ! -f "$DASHBOARD_TEMPLATE" ]] && return 1
+
+    local json
+    json=$(jq -n \
+      --arg target "$domain" \
+      --arg ts "$(date '+%Y-%m-%d %H:%M:%S')" \
+      '{
+        target: $target,
+        generated_at: $ts,
+        stats: {subdomains:0,live_hosts:0,open_ports:0,endpoints:0,secrets:0,vulns:0,takeovers:0,wafs:0,juicy_endpoints:0,js_files:0},
+        subdomains: [], endpoints: [], secrets: {}, vulnerabilities: {}
+      }')
+    local safe; safe=$(echo "$json" | sed 's/[&\\]/\\&/g')
+    sed "s|{DATA_PLACEHOLDER}|$safe|" "$DASHBOARD_TEMPLATE" > "$html"
+}
+
+dashboard_update() {
+    local sd="$1" domain="$2"
+    local html="$sd/dashboard.html"
+    [[ ! -f "$DASHBOARD_TEMPLATE" ]] && return 1
+
+    local s=$(wc -l < "$sd/subs.txt" 2>/dev/null || echo 0)
+    local l=$(wc -l < "$sd/alive.txt" 2>/dev/null || echo 0)
+    local p=$(wc -l < "$sd/raw/naabu.txt" 2>/dev/null || echo 0)
+    local e=$(wc -l < "$sd/allendpoints.txt" 2>/dev/null || echo 0)
+    local jf=$(wc -l < "$sd/jsfile.txt" 2>/dev/null || echo 0)
+    local sec=$(cat "$sd/js_hunt/deepscan.txt" "$sd/js_hunt/gitleaks.txt" 2>/dev/null | wc -l || echo 0)
+    local v=0
+    for f in "$sd/raw/bugs"/*.txt; do
+        [[ -f "$f" ]] && v=$((v + $(wc -l < "$f")))
+    done
+    local ts; ts=$(date '+%Y-%m-%d %H:%M:%S')
+
+    local json
+    json=$(jq -n \
+      --arg target "$domain" \
+      --arg ts "$ts" \
+      --argjson s "$s" \
+      --argjson l "$l" \
+      --argjson p "$p" \
+      --argjson e "$e" \
+      --argjson jf "$jf" \
+      --argjson sec "$sec" \
+      --argjson v "$v" \
+      '{
+        target: $target,
+        generated_at: $ts,
+        stats: {subdomains:$s,live_hosts:$l,open_ports:$p,endpoints:$e,secrets:$sec,vulns:$v,takeovers:0,wafs:0,juicy_endpoints:0,js_files:$jf},
+        subdomains: [], endpoints: [], secrets: {}, vulnerabilities: {}
+      }')
+
+    if [[ -s "$sd/probe.json" ]]; then
+        local subs_json
+        subs_json=$(jq -c -s '[group_by(.input)[] | first | {domain: .input, status: (."status-code" // null), ips: (.host // ""), tech: (.tech // [])}]' "$sd/probe.json" 2>/dev/null || echo "[]")
+        if [[ "$subs_json" != "[]" ]]; then
+            json=$(echo "$json" | jq --argjson arr "$subs_json" '.subdomains = $arr')
+        fi
+    fi
+
+    if [[ -s "$sd/allendpoints.txt" ]]; then
+        local tmp_eps; tmp_eps=$(mktemp)
+        head -500 "$sd/allendpoints.txt" | while IFS= read -r url; do
+            [[ -z "$url" ]] && continue
+            local cat="other"
+            [[ "$url" == */api/* ]] && cat="api"
+            [[ "$url" == */admin* ]] && cat="admin"
+            [[ "$url" == */auth* || "$url" == */login* || "$url" == */signin* || "$url" == */oauth* ]] && cat="auth"
+            [[ "$url" == */upload* ]] && cat="upload"
+            [[ "$url" == *.env || "$url" == *.sql || "$url" == *.bak || "$url" == *.config || "$url" == *.xml || "$url" == *.json || "$url" == *.yml || "$url" == *.yaml ]] && cat="sensitive"
+            jq -n -c --arg url "$url" --arg cat "$cat" '{url: $url, category: $cat}' 2>/dev/null
+        done > "$tmp_eps"
+        if [[ -s "$tmp_eps" ]]; then
+            local eps_json; eps_json=$(jq -s '.' "$tmp_eps" 2>/dev/null || echo "[]")
+            json=$(echo "$json" | jq --argjson arr "$eps_json" '.endpoints = $arr')
+        fi
+        rm -f "$tmp_eps"
+    fi
+
+    local safe; safe=$(echo "$json" | sed 's/[&\\]/\\&/g')
+    sed "s|{DATA_PLACEHOLDER}|$safe|" "$DASHBOARD_TEMPLATE" > "$html"
+}
+
+dashboard_open() {
+    local html="$1/dashboard.html"
+    [[ ! -f "$html" ]] && return
+    if command -v xdg-open &>/dev/null; then
+        xdg-open "$html" &>/dev/null &
+    elif command -v sensible-browser &>/dev/null; then
+        sensible-browser "$html" &>/dev/null &
+    elif command -v firefox &>/dev/null; then
+        firefox "$html" &>/dev/null &
+    elif command -v google-chrome &>/dev/null; then
+        google-chrome "$html" &>/dev/null &
+    fi
+}
+
 draw_progress() {
     local current="$1"
     local total="$2"
@@ -166,6 +267,7 @@ enum_subs() {
     local domain="$1" rd="$2" sd="$3"
     phase_header "1" "Subdomain Enumeration"
     mkdir -p "$rd"; save_state "$sd" "subdomains"
+    dashboard_update "$sd" 1 "Subdomain Enumeration" "running"
     local vt rhk; vt=$(get_vt_key); rhk=$(get_rh_key)
     local total=20
 
@@ -211,6 +313,7 @@ enum_subs() {
     local jcnt; jcnt=$(wc -l < "$rd/juicysubs.txt" 2>/dev/null || echo 0)
     echo -e "  ${D}┃${N}  ${G}✓${N}  ${W}dnsx-juicy${N}  ${G}${jcnt}${N} ${D}juicy subs${N}"
 
+    dashboard_update "$sd" 1 "Subdomain Enumeration" "done"
     phase_sep
     echo -e "  ${G}◆${N}  ${W}Subdomains collected:${N} ${G}${cnt}${N} ${D}unique${N}  ${D}|  Juicy: ${G}${jcnt}${N}"
     save_state "$sd" "subdomains_done"
@@ -221,8 +324,10 @@ extract_ips() {
     local domain="$1" sd="$2"
     phase_header "2" "IP Extraction & Resolution"
     save_state "$sd" "ips"
+    dashboard_update "$sd" 2 "IP Extraction & Resolution" "running"
     if [[ ! -s "$sd/subs.txt" ]]; then
         echo -e "  ${D}┃${N}  ${Y}╳${N}  ${Y}No subdomains to resolve${N}"
+        dashboard_update "$sd" 2 "IP Extraction & Resolution" "done"
         echo "" > "$sd/ips.txt"; save_state "$sd" "ips_done"; return
     fi
 
@@ -260,6 +365,7 @@ extract_ips() {
 
     local ipcnt; ipcnt=$(wc -l < "$sd/ips.txt" 2>/dev/null || echo 0)
     local cidrcnt; cidrcnt=$(wc -l < "$sd/cidrs.txt" 2>/dev/null || echo 0)
+    dashboard_update "$sd" 2 "IP Extraction & Resolution" "done"
     phase_sep
     echo -e "  ${G}◆${N}  ${W}Unique IPs:${N} ${G}${ipcnt}${N}  ${D}|  CIDR ranges: ${G}${cidrcnt}${N}"
     save_state "$sd" "ips_done"
@@ -270,8 +376,10 @@ probe_alive() {
     local domain="$1" sd="$2"
     phase_header "3" "Live Host Probing"
     save_state "$sd" "alive"
+    dashboard_update "$sd" 3 "Live Host Probing" "running"
     if [[ ! -s "$sd/subs.txt" ]]; then
         echo -e "  ${D}┃${N}  ${Y}╳${N}  ${Y}No subdomains to probe${N}"; echo "" > "$sd/alive.txt"
+        dashboard_update "$sd" 3 "Live Host Probing" "done"
         save_state "$sd" "alive_done"; return
     fi
 
@@ -292,14 +400,14 @@ probe_alive() {
     wait "$pid"
     elapsed=$(($(date +%s) - t_start))
 
-    jq -r 'select(."status-code" != null) | .input' "$sd/probe.json" 2>/dev/null | sort -u > "$sd/alive.txt" || true
+    jq -r 'select(."status-code" != null) | .input' "$sd/probe.json" 2>/dev/null | sort -u | awk '{print "https://" $0}' > "$sd/alive.txt" || true
     local cnt; cnt=$(wc -l < "$sd/alive.txt" 2>/dev/null || echo 0)
 
     # Separate by status code
     local sc_dir="$sd/status_codes"
     mkdir -p "$sc_dir"
     for code in 200 201 204 301 302 303 307 308 400 401 403 404 405 410 429 500 502 503; do
-      jq -r "select(.\"status-code\" == $code) | .input" "$sd/probe.json" 2>/dev/null | sort -u > "$sc_dir/alive${code}.txt" || true
+      jq -r "select(.\"status-code\" == $code) | .input" "$sd/probe.json" 2>/dev/null | sort -u | awk '{print "https://" $0}' > "$sc_dir/alive${code}.txt" || true
     done
 
     if [[ "$cnt" -eq 0 ]]; then
@@ -317,10 +425,10 @@ probe_alive() {
         done
         wait "$pid"
         elapsed=$(($(date +%s) - t_start))
-        jq -r 'select(."status-code" != null) | .input' "$sd/probe.json" 2>/dev/null | sort -u > "$sd/alive.txt" || true
+        jq -r 'select(."status-code" != null) | .input' "$sd/probe.json" 2>/dev/null | sort -u | awk '{print "https://" $0}' > "$sd/alive.txt" || true
         cnt=$(wc -l < "$sd/alive.txt" 2>/dev/null || echo 0)
         for code in 200 201 204 301 302 303 307 308 400 401 403 404 405 410 429 500 502 503; do
-          jq -r "select(.\"status-code\" == $code) | .input" "$sd/probe.json" 2>/dev/null | sort -u > "$sc_dir/alive${code}.txt" || true
+          jq -r "select(.\"status-code\" == $code) | .input" "$sd/probe.json" 2>/dev/null | sort -u | awk '{print "https://" $0}' > "$sc_dir/alive${code}.txt" || true
         done
     fi
     printf "\r  ${D}┃${N}  ${C}[1/1]${N} ${G}✓${N} ${W}httpx${N}  ${G}${cnt}${N} ${D}alive${N}  ${D}(${elapsed}s)${N}\n"
@@ -331,21 +439,22 @@ probe_alive() {
         mkdir -p "$bd"
 
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}springboot-actuator${N}  ${D}checking actuator exposure ...${N}"
-        cat "$sd/alive.txt" | nuclei -t $NUCLEI_TEMPLATES/http/technologies/springboot-actuator.yaml -silent -o "$bd/springboot_actuator.txt" 2>/dev/null || true
+        cat "$sd/alive.txt" | nuclei -t $NUCLEI_TEMPLATES/http/technologies/springboot-actuator.yaml -silent -o "$bd/springboot_actuator.txt" &>/dev/null || true
 
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}phpinfo-files${N}  ${D}checking phpinfo exposure ...${N}"
-        cat "$sd/alive.txt" | nuclei -t $NUCLEI_TEMPLATES/http/exposures/configs/phpinfo-files.yaml -silent -o "$bd/phpinfo_files.txt" 2>/dev/null || true
+        cat "$sd/alive.txt" | nuclei -t $NUCLEI_TEMPLATES/http/exposures/configs/phpinfo-files.yaml -silent -o "$bd/phpinfo_files.txt" &>/dev/null || true
 
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}exposed-configs${N}  ${D}scanning configs ...${N}"
-        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/exposed-configs/ -silent -o "$bd/exposed_configs.txt" 2>/dev/null || true
+        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/exposed-configs/ -silent -o "$bd/exposed_configs.txt" &>/dev/null || true
 
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}default-logins${N}  ${D}scanning logins ...${N}"
-        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/default-logins/ -silent -o "$bd/default_logins.txt" 2>/dev/null || true
+        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/default-logins/ -silent -o "$bd/default_logins.txt" &>/dev/null || true
 
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}misconfiguration${N}  ${D}scanning misconfigs ...${N}"
-        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/misconfiguration/ -silent -o "$bd/misconfig.txt" 2>/dev/null || true
+        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/misconfiguration/ -silent -o "$bd/misconfig.txt" &>/dev/null || true
     fi
 
+    dashboard_update "$sd" 3 "Live Host Probing" "done"
     phase_sep
     echo -e "  ${G}◆${N}  ${W}Live hosts found:${N} ${G}${cnt}${N}"
     save_state "$sd" "alive_done"
@@ -356,8 +465,10 @@ fingerprint_tech() {
     local domain="$1" sd="$2"
     phase_header "4" "Technology Fingerprinting"
     save_state "$sd" "tech"
+    dashboard_update "$sd" 4 "Technology Fingerprinting" "running"
     if [[ ! -s "$sd/probe.json" || ! -s "$sd/alive.txt" ]]; then
         echo -e "  ${D}┃${N}  ${Y}╳${N}  ${Y}No probe data to fingerprint${N}"
+        dashboard_update "$sd" 4 "Technology Fingerprinting" "done"
         save_state "$sd" "tech_done"; return
     fi
 
@@ -365,17 +476,18 @@ fingerprint_tech() {
     mkdir -p "$tech_dir"
 
     echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}tech stack nuclei${N}  ${D}scanning alive hosts ...${N}"
-    nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/technologies/" -silent -jsonl -o "$tech_dir/tech_nuclei.json" 2>/dev/null || true
+    nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/technologies/" -silent -jsonl -o "$tech_dir/tech_nuclei.json" &>/dev/null || true
     local tnc; tnc=$(jq -c '.' "$tech_dir/tech_nuclei.json" 2>/dev/null | wc -l || echo 0)
 
     echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}waf detect${N}  ${D}checking for WAFs ...${N}"
-    nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/technologies/waf-detect.yaml" -silent -o "$tech_dir/waf_detect.txt" 2>/dev/null || true
+    nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/technologies/waf-detect.yaml" -silent -o "$tech_dir/waf_detect.txt" &>/dev/null || true
     local wc; wc=$(wc -l < "$tech_dir/waf_detect.txt" 2>/dev/null || echo 0)
 
     # Extract top tech from httpx
     jq -r '.tech[]' "$sd/probe.json" 2>/dev/null | sort | uniq -c | sort -rn > "$tech_dir/tech_stack.txt" || true
     echo -e "  ${D}┃${N}  ${G}✓${N}  ${D}Tech: ${tnc} detect  |  WAF: ${wc} found${N}"
 
+    dashboard_update "$sd" 4 "Technology Fingerprinting" "done"
     phase_sep
     echo -e "  ${G}◆${N}  ${W}Tech detections:${N} ${G}${tnc}${N}  ${D}|  WAFs: ${G}${wc}${N}"
     save_state "$sd" "tech_done"
@@ -386,13 +498,17 @@ scan_ports() {
     local domain="$1" sd="$2"
     phase_header "5" "Port Scanning"
     save_state "$sd" "ports"
+    dashboard_update "$sd" 5 "Port Scanning" "running"
     if [[ ! -s "$sd/ips.txt" ]]; then
-        echo -e "  ${D}┃${N}  ${Y}╳${N}  ${Y}No IPs to scan${N}"; save_state "$sd" "ports_done"; return
+        echo -e "  ${D}┃${N}  ${Y}╳${N}  ${Y}No IPs to scan${N}"
+        dashboard_update "$sd" 5 "Port Scanning" "done"
+        save_state "$sd" "ports_done"; return
     fi
 
     run_tool "naabu" "$sd/raw/naabu.txt" 1 1 bash -c "naabu -list '$sd/ips.txt' -top-ports 1000 -silent -o '$sd/raw/naabu.txt' >/dev/null 2>&1"
     wait
 
+    dashboard_update "$sd" 5 "Port Scanning" "done"
     local pc; pc=$(wc -l < "$sd/raw/naabu.txt" 2>/dev/null || echo 0)
     phase_sep
     echo -e "  ${G}◆${N}  ${W}Open ports:${N} ${G}${pc}${N}"
@@ -404,12 +520,14 @@ enum_endpoints() {
     local domain="$1" sd="$2"
     phase_header "6" "Endpoint Discovery"
     save_state "$sd" "endpoints"
+    dashboard_update "$sd" 6 "Endpoint Discovery" "running"
     if [[ ! -s "$sd/alive.txt" ]]; then
         if [[ -s "$sd/subs.txt" ]]; then
             echo -e "  ${D}┃${N}  ${Y}⚠${N}  ${Y}No alive hosts — using subdomains as fallback${N}"
-            cp "$sd/subs.txt" "$sd/alive.txt"
+            awk '{print "https://" $0}' "$sd/subs.txt" > "$sd/alive.txt"
         else
             echo -e "  ${D}┃${N}  ${Y}╳${N}  ${Y}No live hosts to crawl${N}"; echo "" > "$sd/allendpoints.txt"
+            dashboard_update "$sd" 6 "Endpoint Discovery" "done"
             save_state "$sd" "endpoints_done"; return
         fi
     fi
@@ -466,10 +584,10 @@ enum_endpoints() {
     run_tool "katana"      "$er/katana.txt"      1 7 bash -c "katana -u '$sd/alive.txt' -silent 2>/dev/null > '$er/katana.txt'"
     run_tool "hakrawler"   "$er/hakrawler.txt"   2 7 bash -c "cat '$sd/alive.txt' | hakrawler -subs 2>/dev/null > '$er/hakrawler.txt'"
     run_tool "waybackurls" "$er/waybackurls.txt" 3 7 bash -c "cat '$sd/alive.txt' | waybackurls 2>/dev/null > '$er/waybackurls.txt'"
-    run_tool "gau"         "$er/gau.txt"         4 7 bash -c "cat '$sd/alive.txt' | gau --subs 2>/dev/null > '$er/gau.txt'"
+    run_tool "gau"         "$er/gau.txt"         4 7 bash -c "cat '$sd/alive.txt' | gau --subs --threads 10 2>/dev/null > '$er/gau.txt'"
     run_tool "gospider"    "$er/gospider.txt"    5 7 bash -c "gospider -S '$sd/alive.txt' -o '$er/gospider_output' 2>/dev/null; find '$er/gospider_output' -type f -exec cat {} + 2>/dev/null | grep -Eo 'https?://[^ \"<>]+' | sort -u > '$er/gospider.txt'; rm -rf '$er/gospider_output'"
-    run_tool "paramspider" "$er/paramspider.txt" 6 7 bash -c "paramspider -l '$sd/alive.txt' 2>/dev/null; cat results/*.txt 2>/dev/null > '$er/paramspider.txt'; rm -rf results 2>/dev/null"
-    run_tool "waybackcdx"  "$er/waybackcdx.txt"  7 7 bash -c "curl -s -G 'https://web.archive.org/cdx/search/cdx' --data-urlencode 'url=*.$domain/*' --data-urlencode 'collapse=urlkey' --data-urlencode 'output=text' --data-urlencode 'fl=original' 2>/dev/null > '$er/waybackcdx.txt'"
+    run_tool "paramspider" "$er/paramspider.txt" 6 7 bash -c "paramspider -l '$sd/alive.txt' &>/dev/null; cat results/*.txt 2>/dev/null > '$er/paramspider.txt'; rm -rf results 2>/dev/null"
+    run_tool "waybackcdx"  "$er/waybackcdx.txt"  7 7 bash -c "curl -s --max-time 30 -G 'https://web.archive.org/cdx/search/cdx' --data-urlencode 'url=*.$domain/*' --data-urlencode 'collapse=urlkey' --data-urlencode 'output=text' --data-urlencode 'fl=original' > '$er/waybackcdx.txt' 2>/dev/null; [ -s '$er/waybackcdx.txt' ] || true"
 
     wait
 
@@ -513,6 +631,7 @@ enum_endpoints() {
 
     cat "$er"/*.txt 2>/dev/null | sort -u > "$sd/allendpoints.txt"
     local cnt; cnt=$(wc -l < "$sd/allendpoints.txt" 2>/dev/null || echo 0)
+    dashboard_update "$sd" 6 "Endpoint Discovery" "done"
     phase_sep
     echo -e "  ${G}◆${N}  ${W}Endpoints collected:${N} ${G}${cnt}${N} ${D}unique${N}"
     save_state "$sd" "endpoints_done"
@@ -523,8 +642,10 @@ extract_params() {
     local domain="$1" sd="$2"
     phase_header "7" "Parameter Extraction (gf)"
     save_state "$sd" "params"
+    dashboard_update "$sd" 7 "Parameter Extraction" "running"
     if [[ ! -s "$sd/allendpoints.txt" ]]; then
         echo -e "  ${D}┃${N}  ${Y}╳${N}  ${Y}No endpoints to extract params from${N}"
+        dashboard_update "$sd" 7 "Parameter Extraction" "done"
         save_state "$sd" "params_done"; return
     fi
 
@@ -537,6 +658,7 @@ extract_params() {
     done
 
     local total; total=$(cat "$pd"/*.txt 2>/dev/null | sort -u | wc -l || echo 0)
+    dashboard_update "$sd" 7 "Parameter Extraction" "done"
     phase_sep
     echo -e "  ${G}◆${N}  ${W}Parameterized URLs:${N} ${G}${total}${N}"
     save_state "$sd" "params_done"
@@ -547,8 +669,10 @@ extract_js() {
     local domain="$1" sd="$2"
     phase_header "8" "JavaScript Collection & Analysis"
     save_state "$sd" "js_extract"
+    dashboard_update "$sd" 8 "JavaScript Collection & Analysis" "running"
     if [[ ! -s "$sd/allendpoints.txt" ]]; then
         echo -e "  ${D}┃${N}  ${Y}╳${N}  ${Y}No endpoints to process${N}"; echo "" > "$sd/jsfile.txt"
+        dashboard_update "$sd" 8 "JavaScript Collection & Analysis" "done"
         save_state "$sd" "js_extract_done"; return
     fi
 
@@ -561,6 +685,7 @@ extract_js() {
 
     if [[ ! -s "$sd/jsfile.txt" ]]; then
         echo -e "  ${D}┃${N}  ${Y}╳${N}  ${Y}No JS files to analyze${N}"
+        dashboard_update "$sd" 8 "JavaScript Collection & Analysis" "done"
         save_state "$sd" "js_extract_done"; return
     fi
 
@@ -571,7 +696,7 @@ extract_js() {
 
     run_tool "mantra"      "$jd/mantra.txt"     2 $total bash -c "cat '$sd/jsfile.txt' | mantra -s -d 2>/dev/null > '$jd/mantra.txt'"
 
-    run_tool "deep-scan"   "$jd/deepscan.txt"   3 $total bash -c "cd '$jd/files' && \
+    run_tool "deep-scan"   "$jd/deepscan.txt"   3 $total bash -c "cd '$jd/files' && { \
       grep -rhaE 'AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}' . 2>/dev/null; \
       grep -rhaE 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' . 2>/dev/null; \
       grep -rhaE '(sk|pk)_(live|test)_[A-Za-z0-9]{10,}' . 2>/dev/null; \
@@ -585,8 +710,8 @@ extract_js() {
       grep -rhaE 'pk\.eyJ[A-Za-z0-9_-]{30,}' . 2>/dev/null; \
       grep -rhaE 'hooks\.slack\.com/services/[A-Za-z0-9/]+' . 2>/dev/null; \
       grep -rhaE 'redis://[^\"<> ]+' . 2>/dev/null; \
-      grep -rhaE 'postgresql://[^\"<> ]+' . 2>/dev/null \
-    > '$jd/deepscan.txt'"
+      grep -rhaE 'postgresql://[^\"<> ]+' . 2>/dev/null; \
+    } > '$jd/deepscan.txt'"
 
     run_tool "endpoints"   "$jd/endpoints.txt"  4 $total bash -c "grep -roaE '/[a-zA-Z0-9_/.-]*(api|v[0-9]|graphql|rest|auth|oauth|token|admin|dashboard|console|swagger|health|actuator)[a-zA-Z0-9_/.-]*' '$jd/files/' 2>/dev/null | sort -u > '$jd/endpoints.txt'"
 
@@ -602,6 +727,7 @@ extract_js() {
     gl_cnt=$(wc -l < "$jd/gitleaks.txt" 2>/dev/null || echo 0)
     rm -rf "$jd/files" 2>/dev/null
 
+    dashboard_update "$sd" 8 "JavaScript Collection & Analysis" "done"
     phase_sep
     echo -e "  ${G}◆${N}  ${W}JS downloaded:${N} ${G}${dloaded}${N}  ${D}|  Mantra: ${G}${mantra_cnt}${N}  ${D}|  Secrets: ${G}${deep_cnt}${N}  ${D}|  Endpoints: ${G}${ep_cnt}${N}  ${D}|  Gitleaks: ${G}${gl_cnt}${N}"
     save_state "$sd" "js_extract_done"
@@ -612,16 +738,17 @@ detect_bugs() {
     local domain="$1" sd="$2"
     phase_header "9" "Bug Detection & Quick Wins"
     save_state "$sd" "bugs"
+    dashboard_update "$sd" 9 "Bug Detection & Quick Wins" "running"
     local bd="$sd/raw/bugs"; mkdir -p "$bd"
 
     if [[ -s "$sd/alive.txt" ]]; then
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}quick-win nuclei${N}  ${D}scanning for panels ...${N}"
-        nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/panels/" -silent -o "$bd/panels.txt" 2>/dev/null || true
+        nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/panels/" -silent -o "$bd/panels.txt" &>/dev/null || true
     fi
 
     if [[ -s "$sd/allendpoints.txt" ]]; then
         echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}endpoint nuclei${N}  ${D}scanning endpoints ...${N}"
-        nuclei -l "$sd/allendpoints.txt" -t "$NUCLEI_TEMPLATES/http/vulnerabilities/" -silent -o "$bd/vulns.txt" 2>/dev/null || true
+        nuclei -l "$sd/allendpoints.txt" -t "$NUCLEI_TEMPLATES/http/vulnerabilities/" -silent -o "$bd/vulns.txt" &>/dev/null || true
     fi
 
     local ec; ec=$(wc -l "$bd/exposed_configs.txt" 2>/dev/null | awk '{print $1}')
@@ -634,6 +761,7 @@ detect_bugs() {
     local total_bugs=$((ec + dl + pc + mc + vc + sa + pf))
 
     echo -e "  ${D}┃${N}  ${G}✓${N}  ${D}Configs: ${ec}  Logins: ${dl}  Panels: ${pc}  Misconfigs: ${mc}  Vulns: ${vc}  SpringActuator: ${sa}  PhpInfo: ${pf}${N}"
+    dashboard_update "$sd" 9 "Bug Detection & Quick Wins" "done"
     phase_sep
     echo -e "  ${G}◆${N}  ${W}Bug findings:${N} ${G}${total_bugs}${N}"
     save_state "$sd" "bugs_done"
@@ -683,9 +811,11 @@ process_domain() {
     local domain="$1" orig_dir; orig_dir=$(pwd)
     domain=$(echo "$domain" | /usr/bin/tr '[:upper:]' '[:lower:]' | sed 's|^https\?://||;s|/.*$||;s|^www\.||' | /usr/bin/tr -d '[:space:]')
     [[ -z "$domain" ]] && return
-    local sd="$(pwd)/$domain" st; st=$(date +%s)
+    local sd="$(pwd)/nucleiresults/$domain" st; st=$(date +%s)
     mkdir -p "$sd"
     pushd "$sd" >/dev/null || return
+    dashboard_init "$domain" "$sd"
+    dashboard_open "$sd"
 
     local phase; phase=$(read_phase "$sd")
 
@@ -772,7 +902,8 @@ list_sessions() {
     echo -e "  ${O}📋${N} ${W}DARK-KNIGHT ACTIVE SESSIONS${N}"
     echo -e "  ${D}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${N}"
     local found=0
-    for d in */; do
+    for d in nucleiresults/*/; do
+        [ -d "$d" ] || continue
         local sf="${d}.hunt_state"
         if [[ -f "$sf" ]]; then
             local ph; ph=$(grep -oP 'PHASE=\K.*' "$sf" 2>/dev/null || echo "unknown")
@@ -869,7 +1000,7 @@ main() {
 
     # ── Resume mode ──
     if [[ "$MODE" == "resume" ]]; then
-        local sdir="$(pwd)/$TARGET"
+        local sdir="$(pwd)/nucleiresults/$TARGET"
         if [[ -d "$sdir" && -f "$sdir/.hunt_state" ]]; then
             local ph; ph=$(grep -oP 'PHASE=\K.*' "$sdir/.hunt_state" 2>/dev/null || echo "unknown")
             if [[ "$ph" == "done" && "$FORCE" -eq 0 ]]; then
@@ -889,7 +1020,7 @@ main() {
     # ── Fresh mode ──
     if [[ "$MODE" == "fresh" ]]; then
         FORCE=1
-        local ndir="$(pwd)/$TARGET"
+        local ndir="$(pwd)/nucleiresults/$TARGET"
         if [[ -d "$ndir" ]]; then
             echo -e "  ${Y}◆${N}  ${Y}Fresh start:${N} ${W}$TARGET${N}  ${D}(deleting old session)${N}"
             rm -rf "$ndir"
@@ -911,7 +1042,7 @@ main() {
         local subcnt; subcnt=$(wc -l < "$SUBS_FILE")
         echo -e "  ${C}◆${N}  ${D}Skipping Phase 1 (using ${subcnt} subs from file)${N}"
 
-        local sd="$(pwd)/$base_domain"
+        local sd="$(pwd)/nucleiresults/$base_domain"
         mkdir -p "$sd"
         sort -u "$SUBS_FILE" > "$sd/subs.txt"
         mkdir -p "$sd/raw/subs"
@@ -931,7 +1062,7 @@ main() {
         done < "$TARGET"
     else
         # Auto-resume: if session dir exists, show resume header
-        local adir="$(pwd)/$TARGET"
+        local adir="$(pwd)/nucleiresults/$TARGET"
         if [[ -d "$adir" && -f "$adir/.hunt_state" && "$FORCE" -eq 0 ]]; then
             local aph; aph=$(grep -oP 'PHASE=\K.*' "$adir/.hunt_state" 2>/dev/null || echo "unknown")
             echo -e "  ${C}◆${N}  ${W}Auto-resume:${N} ${C}$TARGET${N}  ${D}(phase: ${aph})${N}"

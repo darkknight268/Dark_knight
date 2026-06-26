@@ -635,6 +635,14 @@
             border-color: rgba(255,255,255,0.05);
         }
 
+        .pill-divider {
+            display: inline-block;
+            width: 1px;
+            height: 24px;
+            background: rgba(255, 255, 255, 0.06);
+            margin: 0 0.25rem;
+        }
+
         .pill.active {
             background: linear-gradient(135deg, var(--primary-glow), rgba(139,92,246,0.04));
             border-color: var(--primary);
@@ -942,8 +950,14 @@
                 <li class="nav-item" data-target="subdomains">
                     <button><span>🌐</span> <span>Subdomains</span></button>
                 </li>
+                <li class="nav-item" data-target="ports">
+                    <button><span>🔌</span> <span>Ports</span></button>
+                </li>
                 <li class="nav-item" data-target="endpoints">
                     <button><span>🔗</span> <span>Endpoints</span></button>
+                </li>
+                <li class="nav-item" data-target="info-disclosure">
+                    <button><span>📄</span> <span>Info Disclosure</span></button>
                 </li>
                 <li class="nav-item" data-target="secrets">
                     <button><span>🔐</span> <span>Secrets</span></button>
@@ -1145,6 +1159,17 @@
                         <div class="search-bar">
                             <input type="text" id="search-subs" placeholder="Search subdomains or resolved IPs...">
                         </div>
+                        <div class="filter-pills" id="subs-filter-pills">
+                            <span class="pill active" onclick="filterSubs('status','all')">All</span>
+                            <span class="pill" onclick="filterSubs('status','2xx')">2xx</span>
+                            <span class="pill" onclick="filterSubs('status','3xx')">3xx</span>
+                            <span class="pill" onclick="filterSubs('status','4xx')">4xx</span>
+                            <span class="pill" onclick="filterSubs('status','5xx')">5xx</span>
+                            <span class="pill" onclick="filterSubs('status','null')">N/A</span>
+                            <span class="pill-divider"></span>
+                            <span id="subs-tech-pills"></span>
+                        </div>
+                        <span id="subs-count" style="font-size:0.78rem;color:var(--text-muted);margin-top:0.5rem;display:block;"></span>
                     </div>
 
                     <div class="table-container">
@@ -1159,6 +1184,30 @@
                             </thead>
                             <tbody id="subs-table-body">
                                 <!-- Populated Dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW: PORTS -->
+            <section id="view-ports" class="tab-view">
+                <div class="card-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title"><span>🔌</span> Open Ports</h2>
+                            <p class="panel-subtitle">Discovered open ports grouped by host IP</p>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Host IP</th>
+                                    <th>Open Ports</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ports-table-body">
                             </tbody>
                         </table>
                     </div>
@@ -1203,6 +1252,21 @@
                                 <!-- Populated Dynamically -->
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW: INFO DISCLOSURE -->
+            <section id="view-info-disclosure" class="tab-view">
+                <div class="card-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title"><span>📄</span> Information Disclosure</h2>
+                            <p class="panel-subtitle">Sensitive files and documents exposed on discovered endpoints</p>
+                        </div>
+                    </div>
+                    <div id="info-disclosure-container">
+                        <!-- Populated Dynamically -->
                     </div>
                 </div>
             </section>
@@ -1385,11 +1449,20 @@
             // 3. Populate Secrets
             renderSecrets();
 
-            // 4. Populate Vulnerability Injections
+            // 4. Populate Ports
+            renderPorts();
+
+            // 5. Populate Info Disclosure
+            renderInfoDisclosure();
+
+            // 6. Populate Vulnerability Injections
             renderVulnerabilities();
         });
 
         // Render Subdomains & Status Codes Chart
+        let activeSubStatus = 'all';
+        let activeSubTech = 'all';
+        let activeSubSearch = '';
         function renderSubdomains() {
             const container = document.getElementById('subs-table-body');
             const subList = targetData.subdomains || [];
@@ -1431,24 +1504,71 @@
                 });
             }, 600);
 
-            // Populate table rows
-            container.innerHTML = subList.map((s, index) => {
-                const badgeClass = s.status === 200 ? 'badge-200' : 
-                                   (s.status >= 300 && s.status < 400) ? 'badge-300' : 
-                                   s.status ? 'badge-400' : 'badge-muted';
-                
-                const techBadges = (s.tech || []).map(t => `<span class="badge badge-info">${t}</span>`).join(' ') || 
-                                   (s.cname ? `<span class="badge badge-muted">${s.cname}</span>` : '<span class="badge badge-muted">--</span>');
+            // Derive unique tech values for tech pills
+            const allTechs = [...new Set(subList.flatMap(s => s.tech || []))].sort();
+            const techPills = document.getElementById('subs-tech-pills');
+            techPills.innerHTML = allTechs.map(t =>
+                `<span class="pill${activeSubTech === t ? ' active' : ''}" onclick="filterSubs('tech','${t.replace(/'/g, "\\'")}')">${t}</span>`
+            ).join('') + (activeSubTech !== 'all' ? `<span class="pill" onclick="filterSubs('tech','all')" style="margin-left:4px;opacity:0.6;">✕ clear</span>` : '');
 
-                return `
-                    <tr style="animation-delay: ${index * 0.05}s">
-                        <td><strong>${s.domain}</strong></td>
-                        <td><span class="badge ${badgeClass}">${s.status || 'Offline'}</span></td>
-                        <td><span style="font-family:'JetBrains Mono', monospace; font-size:0.85rem;">${s.ips || '--'}</span></td>
-                        <td>${techBadges}</td>
-                    </tr>
-                `;
-            }).join('');
+            // Filter data array
+            let filtered = subList;
+            if (activeSubStatus !== 'all') {
+                if (activeSubStatus === 'null') {
+                    filtered = filtered.filter(s => s.status == null);
+                } else if (activeSubStatus === '2xx') {
+                    filtered = filtered.filter(s => s.status >= 200 && s.status < 300);
+                } else if (activeSubStatus === '3xx') {
+                    filtered = filtered.filter(s => s.status >= 300 && s.status < 400);
+                } else if (activeSubStatus === '4xx') {
+                    filtered = filtered.filter(s => s.status >= 400 && s.status < 500);
+                } else if (activeSubStatus === '5xx') {
+                    filtered = filtered.filter(s => s.status >= 500 && s.status < 600);
+                }
+            }
+            if (activeSubTech !== 'all') {
+                filtered = filtered.filter(s => (s.tech || []).includes(activeSubTech));
+            }
+            if (activeSubSearch) {
+                filtered = filtered.filter(s =>
+                    s.domain.toLowerCase().includes(activeSubSearch) ||
+                    (s.ips || '').toLowerCase().includes(activeSubSearch)
+                );
+            }
+
+            // Update count
+            document.getElementById('subs-count').innerText = `Showing ${filtered.length} of ${subList.length} subdomains`;
+
+            // Populate table rows
+            container.innerHTML = filtered.length === 0
+                ? '<tr><td colspan="4" class="empty-state">No subdomains match the selected filters.</td></tr>'
+                : filtered.map((s, index) => {
+                    const badgeClass = s.status === 200 ? 'badge-200' : 
+                                       (s.status >= 300 && s.status < 400) ? 'badge-300' : 
+                                       s.status ? 'badge-400' : 'badge-muted';
+                    
+                    const techBadges = (s.tech || []).map(t => `<span class="badge badge-info">${t}</span>`).join(' ') || 
+                                       '<span class="badge badge-muted">--</span>';
+
+                    return `
+                        <tr style="animation-delay: ${index * 0.05}s">
+                            <td><strong>${s.domain}</strong></td>
+                            <td><span class="badge ${badgeClass}">${s.status || 'Offline'}</span></td>
+                            <td><span style="font-family:'JetBrains Mono', monospace; font-size:0.85rem;">${s.ips || '--'}</span></td>
+                            <td>${techBadges}</td>
+                        </tr>
+                    `;
+                }).join('');
+        }
+        
+        function filterSubs(type, value) {
+            if (type === 'status') activeSubStatus = value;
+            if (type === 'tech') activeSubTech = value;
+            document.querySelectorAll('#subs-filter-pills .pill').forEach(p => p.classList.remove('active'));
+            if (type === 'status') {
+                document.querySelectorAll(`#subs-filter-pills .pill[onclick*="filterSubs('status','${value}')"]`).forEach(p => p.classList.add('active'));
+            }
+            renderSubdomains();
         }
 
         // Render Endpoints
@@ -1499,6 +1619,64 @@
             renderEndpoints(category);
         }
 
+        // Render Ports
+        function renderPorts() {
+            const container = document.getElementById('ports-table-body');
+            const ports = targetData.port_details || [];
+            if (ports.length === 0) {
+                container.innerHTML = `<tr><td colspan="2" class="empty-state">No open port data available.</td></tr>`;
+                return;
+            }
+            container.innerHTML = ports.map(p => `
+                <tr>
+                    <td><strong style="font-family:'JetBrains Mono',monospace;">${p.host}</strong></td>
+                    <td>${(p.ports || []).map(pt => `<span class="badge badge-info" style="margin:2px;">${pt}</span>`).join(' ')}</td>
+                </tr>
+            `).join('');
+        }
+
+        // Render Info Disclosure
+        function renderInfoDisclosure() {
+            const container = document.getElementById('info-disclosure-container');
+            const disclosure = targetData.info_disclosure || {};
+            const keys = Object.keys(disclosure);
+
+            if (keys.length === 0 || keys.every(k => disclosure[k].length === 0)) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🛡️</div>
+                        <div class="empty-title">No Sensitive Files Found</div>
+                        <div class="empty-desc">No sensitive file extensions were detected in discovered endpoints.</div>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = keys.map(key => {
+                const items = disclosure[key] || [];
+                if (items.length === 0) return '';
+                const colorBadge = ['Security', 'SQL DB', 'Backup'].includes(key) ? 'badge-400' :
+                                   ['Config', 'Log/Temp', 'Executable'].includes(key) ? 'badge-300' : 'badge-info';
+                return `
+                    <div class="accordion-item" onclick="toggleAccordion(this)">
+                        <div class="accordion-header">
+                            <span>📄 ${key} <span class="badge ${colorBadge}" style="margin-left:0.5rem">${items.length} files</span></span>
+                            <span class="accordion-toggle-icon">▼</span>
+                        </div>
+                        <div class="accordion-content" onclick="event.stopPropagation()">
+                            <div style="margin-top: 0.5rem; max-height: 300px; overflow-y: auto;">
+                                ${items.map(url => `
+                                    <div style="padding:0.4rem 0;border-bottom:1px solid rgba(255,255,255,0.02);font-family:'JetBrains Mono',monospace;font-size:0.82rem;">
+                                        <a href="${url}" target="_blank" style="color:var(--primary);text-decoration:none;word-break:break-all;">${url}</a>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
         // Bind Endpoint Search
         document.getElementById('search-endpoints').addEventListener('input', () => {
             renderEndpoints(activeEndpointCategory);
@@ -1506,16 +1684,8 @@
 
         // Bind Subdomains Search
         document.getElementById('search-subs').addEventListener('input', (e) => {
-            const val = e.target.value.toLowerCase();
-            const rows = document.querySelectorAll('#subs-table-body tr');
-            rows.forEach(row => {
-                const text = row.innerText.toLowerCase();
-                if (text.includes(val)) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
-            });
+            activeSubSearch = e.target.value.toLowerCase();
+            renderSubdomains();
         });
 
         // Copy all endpoints
