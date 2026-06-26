@@ -347,7 +347,7 @@ run_tool() {
     t_start=$(date +%s)
     printf "  ${D}│${N}  ${O}●${N}  ${D}[%02d/%02d]${N}  %-14s  ${D}active...${N}" "$step" "$total" "$name"
 
-    timeout 300 "$@" &
+    timeout 120 "$@" &
     local pid=$!
     local spin=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local i=0
@@ -387,29 +387,29 @@ enum_subs() {
     run_tool "subfinder"   "$rd/subfinder.txt"     2 $total bash -c "subfinder -d '$domain' -all -silent > '$rd/subfinder.txt' 2>/dev/null"
     run_tool "sublist3r"   "$rd/sublist3r.txt"     3 $total bash -c "sublist3r -d '$domain' -o '$rd/sublist3r.txt' >/dev/null 2>&1"
     run_tool "findomain"   "$rd/findomain.txt"     4 $total bash -c "findomain -t '$domain' -q > '$rd/findomain.txt' 2>/dev/null"
-    run_tool "crtsh"       "$rd/crtsh.txt"         5 $total bash -c "curl -s 'https://crt.sh/?q=%25.$domain&output=json' | jq -r '.[].name_value // empty' 2>/dev/null > '$rd/crtsh.txt'"
+    run_tool "crtsh"       "$rd/crtsh.txt"         5 $total bash -c "curl -s --max-time 30 'https://crt.sh/?q=%25.$domain&output=json' | jq -r '.[].name_value // empty' 2>/dev/null > '$rd/crtsh.txt'"
     run_tool "amass"       "$rd/amass.txt"         6 $total bash -c "amass enum -passive -d '$domain' -nocolor -o '$rd/amass.txt' >/dev/null 2>&1"
-    run_tool "bufferover"  "$rd/bufferover.txt"    7 $total bash -c "curl -s --max-time 30 'https://dns.bufferover.run/dns?q=.$domain' | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > '$rd/bufferover.txt'"
-    run_tool "riddler"     "$rd/riddler.txt"       8 $total bash -c "curl -sL --max-time 30 'https://riddler.io/search/exportcsv?q=pld:$domain' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/riddler.txt'"
-    run_tool "certspotter" "$rd/certspotter.txt"   9 $total bash -c "curl -sL --max-time 30 'https://api.certspotter.com/v1/issuances?domain=$domain&include_subdomains=true&expand=dns_names' | jq -r '.[].dns_names[] // empty' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/certspotter.txt'"
-    run_tool "archivesubs" "$rd/archivesubs.txt"  10 $total bash -c "curl -s --max-time 30 'http://web.archive.org/cdx/search/cdx?url=*.$domain/*&output=text&fl=original&collapse=urlkey' 2>/dev/null | sed -e 's_https*://__' -e 's/\/.*//' | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/archivesubs.txt'"
-    run_tool "jldc-anubis" "$rd/jldc.txt"         11 $total bash -c "curl -sL --max-time 30 'https://jldc.me/anubis/subdomains/$domain' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/jldc.txt'"
-    run_tool "threatminer" "$rd/threatminer.txt"  12 $total bash -c "curl -s --max-time 30 'https://api.threatminer.org/v2/domain.php?q=$domain&rt=5' | jq -r '.results[] // empty' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/threatminer.txt'"
-    run_tool "threatcrowd" "$rd/threatcrowd.txt"  13 $total bash -c "curl -s --max-time 30 'https://www.threatcrowd.org/searchApi/v2/domain/report/?domain=$domain' | jq -r '.subdomains[] // empty' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/threatcrowd.txt'"
-    run_tool "hackertarget" "$rd/hackertarget.txt" 14 $total bash -c "curl -s --max-time 30 'https://api.hackertarget.com/hostsearch/?q=$domain' 2>/dev/null | cut -d',' -f1 | sort -u > '$rd/hackertarget.txt'"
-    run_tool "alienvault"   "$rd/alienvault.txt"   15 $total bash -c "curl -s --max-time 30 'https://otx.alienvault.com/api/v1/indicators/domain/$domain/url_list?limit=100&page=1' 2>/dev/null | grep -o '\"hostname\": *\"[^\"]*' | sed 's/\"hostname\": \"//' | sort -u > '$rd/alienvault.txt'"
-    run_tool "subdomaincntr" "$rd/subdomaincntr.txt" 16 $total bash -c "curl -s --max-time 30 'https://api.subdomain.center/?domain=$domain' 2>/dev/null | jq -r '.[] // empty' | sort -u > '$rd/subdomaincntr.txt'"
+    run_tool "bufferover"  "$rd/bufferover.txt"    7 $total bash -c "curl -s --max-time 25 'https://dns.bufferover.run/dns?q=.$domain' | jq -r '.FDNS_A[]' 2>/dev/null | cut -d',' -f2 | sort -u > '$rd/bufferover.txt'"
+    run_tool "riddler"     "$rd/riddler.txt"       8 $total bash -c "curl -sL --max-time 25 'https://riddler.io/search/exportcsv?q=pld:$domain' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/riddler.txt'"
+    run_tool "certspotter" "$rd/certspotter.txt"   9 $total bash -c "curl -sL --max-time 25 'https://api.certspotter.com/v1/issuances?domain=$domain&include_subdomains=true&expand=dns_names' | jq -r '.[].dns_names[] // empty' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/certspotter.txt'"
+    run_tool "archivesubs" "$rd/archivesubs.txt"  10 $total bash -c "curl -s --max-time 25 'http://web.archive.org/cdx/search/cdx?url=*.$domain/*&output=text&fl=original&collapse=urlkey' 2>/dev/null | sed -e 's_https*://__' -e 's/\/.*//' | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/archivesubs.txt'"
+    run_tool "jldc-anubis" "$rd/jldc.txt"         11 $total bash -c "curl -sL --max-time 25 'https://jldc.me/anubis/subdomains/$domain' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/jldc.txt'"
+    run_tool "threatminer" "$rd/threatminer.txt"  12 $total bash -c "curl -s --max-time 25 'https://api.threatminer.org/v2/domain.php?q=$domain&rt=5' | jq -r '.results[] // empty' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/threatminer.txt'"
+    run_tool "threatcrowd" "$rd/threatcrowd.txt"  13 $total bash -c "curl -s --max-time 25 'https://www.threatcrowd.org/searchApi/v2/domain/report/?domain=$domain' | jq -r '.subdomains[] // empty' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/threatcrowd.txt'"
+    run_tool "hackertarget" "$rd/hackertarget.txt" 14 $total bash -c "curl -s --max-time 25 'https://api.hackertarget.com/hostsearch/?q=$domain' 2>/dev/null | cut -d',' -f1 | sort -u > '$rd/hackertarget.txt'"
+    run_tool "alienvault"   "$rd/alienvault.txt"   15 $total bash -c "curl -s --max-time 25 'https://otx.alienvault.com/api/v1/indicators/domain/$domain/url_list?limit=100&page=1' 2>/dev/null | grep -o '\"hostname\": *\"[^\"]*' | sed 's/\"hostname\": \"//' | sort -u > '$rd/alienvault.txt'"
+    run_tool "subdomaincntr" "$rd/subdomaincntr.txt" 16 $total bash -c "curl -s --max-time 25 'https://api.subdomain.center/?domain=$domain' 2>/dev/null | jq -r '.[] // empty' | sort -u > '$rd/subdomaincntr.txt'"
     run_tool "censys"       "$rd/censys.txt"       17 $total bash -c "censys subdomains '$domain' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/censys.txt'"
     run_tool "nmap-crtsh"   "$rd/nmapcrtsh.txt"    18 $total bash -c "nmap --script hostmap-crtsh.nse '$domain' 2>/dev/null | grep -Po '([\w.-]*\.$domain)\b' | sort -u > '$rd/nmapcrtsh.txt'"
 
     if [[ -n "$vt" ]]; then
-        run_tool "virustotal" "$rd/virustotal.txt" 19 $total bash -c "curl -s --max-time 30 'https://www.virustotal.com/api/v3/domains/$domain/subdomains' -H 'x-apikey: $vt' | jq -r '.data[].id // empty' 2>/dev/null > '$rd/virustotal.txt'"
+        run_tool "virustotal" "$rd/virustotal.txt" 19 $total bash -c "curl -s --max-time 25 'https://www.virustotal.com/api/v3/domains/$domain/subdomains' -H 'x-apikey: $vt' | jq -r '.data[].id // empty' 2>/dev/null > '$rd/virustotal.txt'"
     else
         echo -e "  ${D}┃${N}  ${C}[19/$total]${N} ${D}⏭${N} ${D}virustotal${N}  ${D}(no API key)${N}"
     fi
 
     if [[ -n "$rhk" ]]; then
-        run_tool "redhunt" "$rd/redhunt.txt" 20 $total bash -c "curl -s --max-time 30 'https://reconapi.redhuntlabs.com/community/v1/domains/subdomains?domain=$domain&page_size=1000' -H 'X-BLOBR-KEY: $rhk' 2>/dev/null | jq -r '.subdomains[] // empty' | sort -u > '$rd/redhunt.txt'"
+        run_tool "redhunt" "$rd/redhunt.txt" 20 $total bash -c "curl -s --max-time 25 'https://reconapi.redhuntlabs.com/community/v1/domains/subdomains?domain=$domain&page_size=1000' -H 'X-BLOBR-KEY: $rhk' 2>/dev/null | jq -r '.subdomains[] // empty' | sort -u > '$rd/redhunt.txt'"
     else
         echo -e "  ${D}┃${N}  ${C}[20/$total]${N} ${D}⏭${N} ${D}redhunt${N}  ${D}(no REDHUNT_API_KEY)${N}"
     fi
@@ -419,14 +419,8 @@ enum_subs() {
     cat "$rd"/*.txt 2>/dev/null | /usr/bin/tr '[:upper:]' '[:lower:]' | sed 's/^\*\.//g; s/^\*//g' | /usr/bin/tr ',' '\n' | sed 's/^ *//;s/ *$//' | sort -u > "$sd/subs.txt"
     local cnt; cnt=$(wc -l < "$sd/subs.txt" 2>/dev/null || echo 0)
 
-    # Juicy subdomains — resolved + filtered for high-value keywords
-    echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}dnsx-juicy${N}  ${D}resolving & filtering juicy subs ...${N}"
-    cat "$sd/subs.txt" | timeout 60 dnsx -silent -a -resp 2>/dev/null | grep -oE '^[^ ]+' | grep -E 'api|dev|stg|test|admin|demo|stage|pre|vpn|portal|jenkins|gitlab|jira|grafana|prometheus|kibana' > "$rd/juicysubs.txt" 2>/dev/null
-    local jcnt; jcnt=$(wc -l < "$rd/juicysubs.txt" 2>/dev/null || echo 0)
-    echo -e "  ${D}┃${N}  ${G}✓${N}  ${W}dnsx-juicy${N}  ${G}${jcnt}${N} ${D}juicy subs${N}"
-
     phase_sep
-    echo -e "  ${G}◆${N}  ${W}Subdomains collected:${N} ${G}${cnt}${N} ${D}unique${N}  ${D}|  Juicy: ${G}${jcnt}${N}"
+    echo -e "  ${G}◆${N}  ${W}Subdomains collected:${N} ${G}${cnt}${N} ${D}unique${N}"
     save_state "$sd" "subdomains_done"
 }
 
@@ -465,7 +459,7 @@ extract_ips() {
         echo -e "  ${D}┃${N}  ${C}[4/$total]${N} ${D}⏭${N} ${D}censys-ips${N}  ${D}(no CENSYS_API_ID/SECRET)${N}"
     fi
 
-    run_tool "asnmap" "$ir/asnmap.txt" 5 $total bash -c "if [[ -n \"\${PDCP_API_KEY:-}\" ]]; then cat '$ir/dnsx.txt' 2>/dev/null | /usr/bin/tr '\n' ',' | sed 's/,$//' | xargs -I{} asnmap -silent -ip {} 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+' > '$ir/asnmap.txt'; else while read -r ip; do [[ -z \"\$ip\" ]] && continue; cidr=\$(whois \"\$ip\" 2>/dev/null | grep -iE 'cidr|route' | grep -oE '[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+' | head -1); echo \"\${cidr:-\$ip/32}\"; done < '$ir/dnsx.txt' | sort -u > '$ir/asnmap.txt'; fi"
+    run_tool "asnmap" "$ir/asnmap.txt" 5 $total bash -c "timeout 60 bash -c 'if [[ -n \"\${PDCP_API_KEY:-}\" ]]; then cat '\''$ir/dnsx.txt'\'' 2>/dev/null | /usr/bin/tr \"\n\" \",\" | sed \"s/,$//\" | xargs -I{} asnmap -silent -ip {} 2>/dev/null | grep -oE \"[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+\" > '\''$ir/asnmap.txt'\''; else while read -r ip; do [[ -z \"\$ip\" ]] && continue; cidr=\$(whois \"\$ip\" 2>/dev/null | grep -iE \"cidr|route\" | grep -oE \"[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+/[0-9]+\" | head -1); echo \"\${cidr:-\$ip/32}\"; done < '\''$ir/dnsx.txt'\'' | sort -u > '\''$ir/asnmap.txt'\''; fi'"
 
     wait
 
@@ -519,8 +513,6 @@ probe_alive() {
     if [[ "$cnt" -eq 0 ]]; then
         printf "\r  ${D}┃${N}  ${C}[1/1]${N} ${Y}∼${N} ${W}httpx${N}  ${Y}0${N} ${D}alive${N}  ${D}(${elapsed}s)${N}\n"
         echo -e "  ${D}┃${N}  ${Y}⚠${N}  ${Y}Retrying with more threads ...${N}"
-        sleep "$RETRY_DELAY"
-        t_start=$(date +%s)
         printf "  ${D}┃${N}  ${C}[1/1]${N} ${O}▶${N} ${W}httpx${N}  ${D}retry${N}"
         cat "$sd/subs.txt" | httpx-toolkit -ports "$ports" -threads 500 -retries 3 -silent -status-code -json -o "$sd/probe.json" >/dev/null 2>&1 &
         pid=$!; i=0
@@ -539,25 +531,18 @@ probe_alive() {
     fi
     printf "\r  ${D}┃${N}  ${C}[1/1]${N} ${G}✓${N} ${W}httpx${N}  ${G}${cnt}${N} ${D}alive${N}  ${D}(${elapsed}s)${N}\n"
 
-    # Run Nuclei scans on alive.txt immediately after extraction
+    # Run Nuclei scans on alive.txt in parallel
     if [[ "$cnt" -gt 0 ]]; then
         local bd="$sd/raw/bugs"
         mkdir -p "$bd"
 
-        echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}springboot-actuator${N}  ${D}checking actuator exposure ...${N}"
-        cat "$sd/alive.txt" | nuclei -t $NUCLEI_TEMPLATES/http/technologies/springboot-actuator.yaml -silent -o "$bd/springboot_actuator.txt" &>/dev/null || true
-
-        echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}phpinfo-files${N}  ${D}checking phpinfo exposure ...${N}"
-        cat "$sd/alive.txt" | nuclei -t $NUCLEI_TEMPLATES/http/exposures/configs/phpinfo-files.yaml -silent -o "$bd/phpinfo_files.txt" &>/dev/null || true
-
-        echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}exposed-configs${N}  ${D}scanning configs ...${N}"
-        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/exposed-configs/ -silent -o "$bd/exposed_configs.txt" &>/dev/null || true
-
-        echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}default-logins${N}  ${D}scanning logins ...${N}"
-        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/default-logins/ -silent -o "$bd/default_logins.txt" &>/dev/null || true
-
-        echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}misconfiguration${N}  ${D}scanning misconfigs ...${N}"
-        nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/misconfiguration/ -silent -o "$bd/misconfig.txt" &>/dev/null || true
+        echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}quick nuclei scans${N}  ${D}running 5 checks in parallel ...${N}"
+        { cat "$sd/alive.txt" | nuclei -t $NUCLEI_TEMPLATES/http/technologies/springboot-actuator.yaml -silent -o "$bd/springboot_actuator.txt" &>/dev/null; } &
+        { cat "$sd/alive.txt" | nuclei -t $NUCLEI_TEMPLATES/http/exposures/configs/phpinfo-files.yaml -silent -o "$bd/phpinfo_files.txt" &>/dev/null; } &
+        { nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/exposed-configs/ -silent -o "$bd/exposed_configs.txt" &>/dev/null; } &
+        { nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/default-logins/ -silent -o "$bd/default_logins.txt" &>/dev/null; } &
+        { nuclei -l "$sd/alive.txt" -t $NUCLEI_TEMPLATES/http/misconfiguration/ -silent -o "$bd/misconfig.txt" &>/dev/null; } &
+        wait
     fi
 
     phase_sep
@@ -631,71 +616,22 @@ enum_endpoints() {
 
     local er="$sd/raw/endpoints"; mkdir -p "$er"
 
-    # ── Start kxss watcher for live XSS detection ──
-    local kxss_pid=0 kxss_out="$sd/kxss.txt"
-    echo -e "  ${D}┃${N}  ${O}⚡${N}  ${W}kxss watcher${N}  ${D}live XSS scanning in background ...${N}"
-    (
-        touch "$kxss_out"
-        while kill -0 "$PPID" 2>/dev/null; do
-            local e1="$er/katana.txt" e2="$er/hakrawler.txt" e3="$er/waybackurls.txt" e4="$er/gau.txt"
-            cat "$e1" "$e2" "$e3" "$e4" 2>/dev/null | grep -E '\?.' | timeout 10 kxss 2>/dev/null >> "$kxss_out" || cat "$e1" "$e2" "$e3" "$e4" 2>/dev/null | grep -E '\?.' | timeout 10 "$HOME/go/bin/kxss" 2>/dev/null >> "$kxss_out"
-            local finds
-            finds=$(grep -n '<\|>' "$kxss_out" 2>/dev/null | tail -3)
-            if [[ -n "$finds" ]]; then
-                while IFS= read -r xline; do
-                    local xurl; xurl=$(echo "${xline#*:}" | grep -oE 'https?://[^ ]+' | head -1)
-                    echo -e "  ${R}┃${N}  ${R}⚡ XSS:${N} ${W}${xurl:-${xline#*:}}${N}"
-                done <<< "$finds"
-            fi
-            sleep 8
-        done
-    ) &
-    kxss_pid=$!
-
-    # ── Start open redirect watcher ──
-    local or_pid=0 or_out="$sd/openredirect.txt" or_seen; or_seen=$(mktemp)
-    echo -e "  ${D}┃${N}  ${Y}↗${N}  ${W}open redirect watcher${N}  ${D}checking for redirects in background ...${N}"
-    (
-        touch "$or_out"
-        while kill -0 "$PPID" 2>/dev/null; do
-            for or_f in "$er/katana.txt" "$er/hakrawler.txt" "$er/waybackurls.txt" "$er/gau.txt"; do
-                [[ ! -f "$or_f" ]] && continue
-                grep -ai '=http' "$or_f" 2>/dev/null | head -15 | while IFS= read -r or_url; do
-                    [[ -z "$or_url" ]] && continue
-                    grep -qF "$or_url" "$or_seen" 2>/dev/null && continue
-                    echo "$or_url" >> "$or_seen"
-                    local replaced
-                    replaced=$(echo "$or_url" | qsreplace 'http://evil.com' 2>/dev/null || echo "$or_url" | "$HOME/go/bin/qsreplace" 'http://evil.com' 2>/dev/null)
-                    [[ -z "$replaced" ]] && continue
-                    if curl -s -L -m 5 -I "$replaced" 2>/dev/null | grep -q 'http://evil.com'; then
-                        echo "$or_url" >> "$or_out"
-                        echo -e "  ${R}┃${N}  ${R}↗ REDIRECT:${N} ${W}${or_url}${N}"
-                    fi
-                done
-            done
-            sleep 15
-        done
-    ) &
-    or_pid=$!
-
-    run_tool "katana"      "$er/katana.txt"      1 7 bash -c "katana -u '$sd/alive.txt' -silent 2>/dev/null > '$er/katana.txt'"
-    run_tool "hakrawler"   "$er/hakrawler.txt"   2 7 bash -c "cat '$sd/alive.txt' | hakrawler -subs 2>/dev/null > '$er/hakrawler.txt'"
-    run_tool "waybackurls" "$er/waybackurls.txt" 3 7 bash -c "cat '$sd/alive.txt' | waybackurls 2>/dev/null > '$er/waybackurls.txt'"
-    run_tool "gau"         "$er/gau.txt"         4 7 bash -c "cat '$sd/alive.txt' | gau --subs --threads 10 2>/dev/null > '$er/gau.txt'"
-    run_tool "gospider"    "$er/gospider.txt"    5 7 bash -c "gospider -S '$sd/alive.txt' -o '$er/gospider_output' 2>/dev/null; find '$er/gospider_output' -type f -exec cat {} + 2>/dev/null | grep -Eo 'https?://[^ \"<>]+' | sort -u > '$er/gospider.txt'; rm -rf '$er/gospider_output'"
-    run_tool "paramspider" "$er/paramspider.txt" 6 7 bash -c "paramspider -l '$sd/alive.txt' &>/dev/null; cat results/*.txt 2>/dev/null > '$er/paramspider.txt'; rm -rf results 2>/dev/null"
-    run_tool "waybackcdx"  "$er/waybackcdx.txt"  7 7 bash -c "curl -s --max-time 30 -G 'https://web.archive.org/cdx/search/cdx' --data-urlencode 'url=*.$domain/*' --data-urlencode 'collapse=urlkey' --data-urlencode 'output=text' --data-urlencode 'fl=original' > '$er/waybackcdx.txt' 2>/dev/null; [ -s '$er/waybackcdx.txt' ] || true"
-
+    # Run all endpoint discovery tools in parallel
+    echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}endpoint tools${N}  ${D}running 7 tools in parallel ...${N}"
+    { katana -u "$sd/alive.txt" -silent 2>/dev/null > "$er/katana.txt"; } &
+    { cat "$sd/alive.txt" | hakrawler -subs 2>/dev/null > "$er/hakrawler.txt"; } &
+    { cat "$sd/alive.txt" | waybackurls 2>/dev/null > "$er/waybackurls.txt"; } &
+    { cat "$sd/alive.txt" | gau --subs --threads 10 2>/dev/null > "$er/gau.txt"; } &
+    { gospider -S "$sd/alive.txt" -o "$er/gospider_output" 2>/dev/null; find "$er/gospider_output" -type f -exec cat {} + 2>/dev/null | grep -Eo 'https?://[^ \"<>]+' | sort -u > "$er/gospider.txt"; rm -rf "$er/gospider_output"; } &
+    { paramspider -l "$sd/alive.txt" &>/dev/null; cat results/*.txt 2>/dev/null > "$er/paramspider.txt"; rm -rf results 2>/dev/null; } &
+    { curl -s --max-time 30 -G 'https://web.archive.org/cdx/search/cdx' --data-urlencode 'url=*.'"$domain"'/*' --data-urlencode 'collapse=urlkey' --data-urlencode 'output=text' --data-urlencode 'fl=original' > "$er/waybackcdx.txt" 2>/dev/null; } &
     wait
 
-    # ── Stop background watchers ──
-    [[ "$kxss_pid" -ne 0 ]] && kill "$kxss_pid" 2>/dev/null && wait "$kxss_pid" 2>/dev/null
-    [[ "$or_pid" -ne 0 ]] && kill "$or_pid" 2>/dev/null && wait "$or_pid" 2>/dev/null
-    rm -f "$or_seen" 2>/dev/null
+    kxss_out="$sd/kxss.txt"; or_out="$sd/openredirect.txt"
 
-    # ── Final kxss pass ──
-    echo -e "  ${D}┃${N}  ${O}⚡${N}  ${W}kxss final scan${N}  ${D}checking all endpoints ...${N}"
-    cat "$er/katana.txt" "$er/hakrawler.txt" "$er/waybackurls.txt" "$er/gau.txt" 2>/dev/null | grep -E '\?.' | timeout 30 kxss 2>/dev/null >> "$kxss_out" || cat "$er/katana.txt" "$er/hakrawler.txt" "$er/waybackurls.txt" "$er/gau.txt" 2>/dev/null | grep -E '\?.' | timeout 30 "$HOME/go/bin/kxss" 2>/dev/null >> "$kxss_out"
+    # ── kxss scan on collected endpoints ──
+    echo -e "  ${D}┃${N}  ${O}⚡${N}  ${W}kxss scan${N}  ${D}checking for XSS reflections ...${N}"
+    cat "$er/katana.txt" "$er/hakrawler.txt" "$er/waybackurls.txt" "$er/gau.txt" 2>/dev/null | grep -E '\?.' | timeout 30 kxss 2>/dev/null > "$kxss_out" || cat "$er/katana.txt" "$er/hakrawler.txt" "$er/waybackurls.txt" "$er/gau.txt" 2>/dev/null | grep -E '\?.' | timeout 30 "$HOME/go/bin/kxss" 2>/dev/null > "$kxss_out"
     local kxss_finds
     kxss_finds=$(grep -c '<\|>' "$kxss_out" 2>/dev/null || echo 0)
     if [[ "$kxss_finds" -gt 0 ]]; then
@@ -708,15 +644,14 @@ enum_endpoints() {
         echo -e "  ${D}┃${N}  ${G}✓${N}  ${D}kxss done — no obvious XSS reflections${N}"
     fi
 
-    # ── Final open redirect scan on all endpoints ──
-    echo -e "  ${D}┃${N}  ${Y}↗${N}  ${W}open redirect final scan${N}  ${D}checking all endpoints ...${N}"
+    # ── Open redirect scan on all endpoints ──
+    echo -e "  ${D}┃${N}  ${Y}↗${N}  ${W}open redirect scan${N}  ${D}checking for redirects ...${N}"
     grep -hai '=http' "$er/katana.txt" "$er/hakrawler.txt" "$er/waybackurls.txt" "$er/gau.txt" 2>/dev/null | sort -u | while IFS= read -r or_url; do
         local replaced
         replaced=$(echo "$or_url" | qsreplace 'http://evil.com' 2>/dev/null || echo "$or_url" | "$HOME/go/bin/qsreplace" 'http://evil.com' 2>/dev/null)
         [[ -z "$replaced" ]] && continue
         if curl -s -L -m 5 -I "$replaced" 2>/dev/null | grep -q 'http://evil.com'; then
             echo "$or_url" >> "$or_out"
-            echo -e "  ${R}┃${N}  ${R}↗ REDIRECT:${N} ${W}${or_url}${N}"
         fi
     done
     if [[ -s "$or_out" ]]; then
@@ -829,15 +764,14 @@ detect_bugs() {
     save_state "$sd" "bugs"
     local bd="$sd/raw/bugs"; mkdir -p "$bd"
 
+    echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}nuclei scans${N}  ${D}running panels & endpoints in parallel ...${N}"
     if [[ -s "$sd/alive.txt" ]]; then
-        echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}quick-win nuclei${N}  ${D}scanning for panels ...${N}"
-        nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/panels/" -silent -o "$bd/panels.txt" &>/dev/null || true
+        { nuclei -l "$sd/alive.txt" -t "$NUCLEI_TEMPLATES/http/panels/" -silent -o "$bd/panels.txt" &>/dev/null; } &
     fi
-
     if [[ -s "$sd/allendpoints.txt" ]]; then
-        echo -e "  ${D}┃${N}  ${O}▶${N}  ${W}endpoint nuclei${N}  ${D}scanning endpoints ...${N}"
-        nuclei -l "$sd/allendpoints.txt" -t "$NUCLEI_TEMPLATES/http/vulnerabilities/" -silent -o "$bd/vulns.txt" &>/dev/null || true
+        { nuclei -l "$sd/allendpoints.txt" -t "$NUCLEI_TEMPLATES/http/vulnerabilities/" -silent -o "$bd/vulns.txt" &>/dev/null; } &
     fi
+    wait
 
     local ec; ec=$(wc -l "$bd/exposed_configs.txt" 2>/dev/null | awk '{print $1}')
     local dl; dl=$(wc -l "$bd/default_logins.txt" 2>/dev/null | awk '{print $1}')
