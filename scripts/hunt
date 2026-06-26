@@ -496,14 +496,14 @@ probe_alive() {
         elapsed=$(($(date +%s) - t_start))
         printf "\r  ${D}┃${N}  ${C}[1/1]${N} ${O}${spin[$i]}${N} ${W}httpx${N}  ${D}${elapsed}s${N}"
         i=$(( (i + 1) % 4 )); sleep 0.2
+        [[ $elapsed -gt 300 ]] && { kill "$pid" 2>/dev/null; break; }
     done
-    wait "$pid"
+    wait "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
     elapsed=$(($(date +%s) - t_start))
 
     jq -r 'select(."status-code" != null) | .input' "$sd/probe.json" 2>/dev/null | sort -u | awk '{print "https://" $0}' > "$sd/alive.txt" || true
     local cnt; cnt=$(wc -l < "$sd/alive.txt" 2>/dev/null || echo 0)
 
-    # Separate by status code
     local sc_dir="$sd/status_codes"
     mkdir -p "$sc_dir"
     for code in 200 201 204 301 302 303 307 308 400 401 403 404 405 410 429 500 502 503; do
@@ -520,8 +520,9 @@ probe_alive() {
             elapsed=$(($(date +%s) - t_start))
             printf "\r  ${D}┃${N}  ${C}[1/1]${N} ${O}${spin[$i]}${N} ${W}httpx${N}  ${D}${elapsed}s${N}"
             i=$(( (i + 1) % 4 )); sleep 0.2
+            [[ $elapsed -gt 60 ]] && { kill "$pid" 2>/dev/null; break; }
         done
-        wait "$pid"
+        wait "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
         elapsed=$(($(date +%s) - t_start))
         jq -r 'select(."status-code" != null) | .input' "$sd/probe.json" 2>/dev/null | sort -u | awk '{print "https://" $0}' > "$sd/alive.txt" || true
         cnt=$(wc -l < "$sd/alive.txt" 2>/dev/null || echo 0)
@@ -633,7 +634,8 @@ enum_endpoints() {
     echo -e "  ${D}┃${N}  ${O}⚡${N}  ${W}kxss scan${N}  ${D}checking for XSS reflections ...${N}"
     cat "$er/katana.txt" "$er/hakrawler.txt" "$er/waybackurls.txt" "$er/gau.txt" 2>/dev/null | grep -E '\?.' | timeout 30 kxss 2>/dev/null > "$kxss_out" || cat "$er/katana.txt" "$er/hakrawler.txt" "$er/waybackurls.txt" "$er/gau.txt" 2>/dev/null | grep -E '\?.' | timeout 30 "$HOME/go/bin/kxss" 2>/dev/null > "$kxss_out"
     local kxss_finds
-    kxss_finds=$(grep -c '<\|>' "$kxss_out" 2>/dev/null || echo 0)
+    kxss_finds=$(grep -c '<\|>' "$kxss_out" 2>/dev/null || true)
+    kxss_finds="${kxss_finds:-0}"
     if [[ "$kxss_finds" -gt 0 ]]; then
         echo -e "  ${D}┃${N}  ${R}⚡${N}  ${R}XSS POTENTIALS:${N} ${R}${kxss_finds}${N} ${D}found (see kxss.txt)${N}"
         grep -n '<\|>' "$kxss_out" 2>/dev/null | head -5 | while IFS=: read -r _ xcontent; do
