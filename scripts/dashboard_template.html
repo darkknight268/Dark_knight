@@ -814,6 +814,12 @@
             align-items: center;
             justify-content: center;
             transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), visibility 0.8s;
+            animation: splashFade 2.5s forwards;
+        }
+        
+        @keyframes splashFade {
+            0%, 70% { opacity: 1; visibility: visible; }
+            100% { opacity: 0; visibility: hidden; }
         }
         
         .loader-logo {
@@ -912,7 +918,7 @@
     </style>
 </head>
 <body>
-    <!-- Splash Screen Loader -->
+    <!-- Splash Screen Loader (auto-hides after 2s) -->
     <div id="splash-loader">
         <div class="loader-logo">🎯</div>
         <div class="loader-title">DARK-KNIGHT SECURITY TOOLKIT v2.0</div>
@@ -1285,45 +1291,31 @@
         </main>
     </div>
 
-    <!-- DATA INJECTION PLACEHOLDER -->
-    <script>
-        let targetData = {};
-        try {
-            targetData = {DATA_PLACEHOLDER};
-        } catch (e) {
-            console.warn('Dashboard opened without compiled data. Running in template mode.', e);
-        }
-    </script>
+    <!-- DATA INJECTION -->
+    <script id="target-data" type="application/json">{DATA_PLACEHOLDER}</script>
 
     <!-- JS Logic -->
     <script>
-        // Splash Loader Sequence
+        // Splash Loader Sequence (CSS handles fade-out)
         document.addEventListener('DOMContentLoaded', () => {
-            const loader = document.getElementById('splash-loader');
             const statusText = document.getElementById('loader-status');
             const progressBar = document.getElementById('loader-progress');
-            
             const phases = [
                 { text: "Loading core dashboard...", progress: 20 },
                 { text: "Parsing subdomain mappings...", progress: 50 },
                 { text: "Auditing leaked secrets...", progress: 80 },
                 { text: "Decrypting vulnerability indexes...", progress: 100 }
             ];
-            
-            let currentPhase = 0;
+            let i = 0;
             const interval = setInterval(() => {
-                if (currentPhase < phases.length) {
-                    statusText.innerText = phases[currentPhase].text;
-                    progressBar.style.width = phases[currentPhase].progress + '%';
-                    currentPhase++;
+                if (i < phases.length) {
+                    if (statusText) statusText.innerText = phases[i].text;
+                    if (progressBar) progressBar.style.width = phases[i].progress + '%';
+                    i++;
                 } else {
                     clearInterval(interval);
-                    loader.style.opacity = '0';
-                    setTimeout(() => {
-                        loader.style.visibility = 'hidden';
-                    }, 800);
                 }
-            }, 300);
+            }, 350);
         });
 
         // Tab switching logic
@@ -1359,6 +1351,14 @@
         }
 
         // Initialize Dashboard Data
+        let targetData = {};
+        try {
+            const el = document.getElementById('target-data');
+            if (el) targetData = JSON.parse(el.textContent);
+        } catch (e) {
+            console.warn('Dashboard opened without compiled data. Running in template mode.', e);
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             const data = targetData || {};
             
