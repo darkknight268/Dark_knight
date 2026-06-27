@@ -2,8 +2,7 @@
 set -uo pipefail
 
 VERSION="2.0"
-MAX_RETRIES=2
-RETRY_DELAY=30
+
 
 # Auto-load config if present
 CONFIG_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -347,7 +346,7 @@ run_tool() {
     t_start=$(date +%s)
     printf "  ${D}│${N}  ${O}●${N}  ${D}[%02d/%02d]${N}  %-14s  ${D}active...${N}" "$step" "$total" "$name"
 
-    timeout 120 "$@" &
+    timeout 90 "$@" &
     local pid=$!
     local spin=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local i=0
@@ -496,7 +495,7 @@ probe_alive() {
         elapsed=$(($(date +%s) - t_start))
         printf "\r  ${D}┃${N}  ${C}[1/1]${N} ${O}${spin[$i]}${N} ${W}httpx${N}  ${D}${elapsed}s${N}"
         i=$(( (i + 1) % 4 )); sleep 0.2
-        [[ $elapsed -gt 300 ]] && { kill "$pid" 2>/dev/null; break; }
+        [[ $elapsed -gt 180 ]] && { kill "$pid" 2>/dev/null; break; }
     done
     wait "$pid" 2>/dev/null; wait "$pid" 2>/dev/null
     elapsed=$(($(date +%s) - t_start))
