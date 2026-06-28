@@ -90,7 +90,9 @@ read_phase() {
     fi
 }
 
-DASHBOARD_TEMPLATE="$HOME/.local/share/hunt/dashboard_template.html"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+DASHBOARD_TEMPLATE="$SCRIPT_DIR/dashboard_template.html"
+[[ -f "$DASHBOARD_TEMPLATE" ]] || DASHBOARD_TEMPLATE="$HOME/.local/share/hunt/dashboard_template.html"
 
 dashboard_init() {
     local domain="$1" sd="$2"
@@ -276,6 +278,98 @@ json.dump(vulns, sys.stdout)
         fi
         rm -f "$tmp_vulns"
     fi
+
+    # ── Phase progress tracking ──
+    python3 -c "
+import json, os, sys
+sd = '$sd'
+with open('$tmp_json') as f:
+    data = json.load(f)
+
+phases = [
+    {'id': 1, 'name': 'Subdomain Enumeration',      'key': 'subdomains', 'file': '$sd/subs.txt'},
+    {'id': 2, 'name': 'IP Extraction & Resolution',  'key': 'ips',       'file': '$sd/ips.txt'},
+    {'id': 3, 'name': 'Live Host Probing',           'key': 'alive',     'file': '$sd/alive.txt'},
+    {'id': 4, 'name': 'Technology Fingerprinting',   'key': 'tech',      'file': '$sd/technologies/waf_detect.txt'},
+    {'id': 5, 'name': 'Port Scanning',               'key': 'ports',     'file': '$sd/raw/naabu.txt'},
+    {'id': 6, 'name': 'Endpoint Discovery',          'key': 'endpoints', 'file': '$sd/allendpoints.txt'},
+    {'id': 7, 'name': 'Parameter Extraction',        'key': 'params',    'file': '$sd/raw/params/xss.txt'},
+    {'id': 8, 'name': 'JavaScript Collection & Analysis','key': 'js_extract','file': '$sd/js_hunt/deepscan.txt'},
+    {'id': 9, 'name': 'Bug Detection & Quick Wins',  'key': 'bugs',      'file': '$sd/raw/bugs/vulns.txt'},
+]
+
+state_file = os.path.join(sd, '.hunt_state')
+current_phase = 'start'
+if os.path.isfile(state_file):
+    with open(state_file) as f:
+        for line in f:
+            if line.startswith('PHASE='):
+                current_phase = line.split('=', 1)[1].strip()
+                break
+
+ordered_keys = [p['key'] for p in phases]
+current_idx = -1
+if current_phase == 'done':
+    current_idx = len(phases)
+elif current_phase in ordered_keys:
+    current_idx = ordered_keys.index(current_phase)
+else:
+    done_key = current_phase.replace('_done', '')
+    if done_key in ordered_keys:
+        current_idx = ordered_keys.index(done_key)
+    elif current_phase != 'start':
+        current_idx = len(phases)
+
+stat_map = {
+    'subdomains': 'subdomains',
+    'live_hosts': 'live_hosts',
+    'open_ports': 'open_ports',
+    'endpoints': 'endpoints',
+    'js_files': 'js_files',
+    'secrets': 'secrets',
+    'vulns': 'vulns',
+}
+
+for i, p in enumerate(phases):
+    if i < current_idx:
+        status = 'done'
+    elif i == current_idx:
+        if current_phase == p['key']:
+            status = 'running'
+        else:
+            status = 'done'
+    else:
+        status = 'pending'
+
+    count = None
+    for sk, sv in stat_map.items():
+        if sk == p['key'] or (p['key'] == 'alive' and sk == 'live_hosts') or (p['key'] == 'ports' and sk == 'open_ports') or (p['key'] == 'js_extract' and sk in ('js_files', 'secrets')):
+            if sk in data.get('stats', {}):
+                val = data['stats'][sk]
+                if val and val > 0:
+                    if count is None:
+                        count = 0
+                    count += val
+
+    p['status'] = status
+    if status == 'done' and count is not None and count > 0:
+        p['count'] = count
+    elif status != 'pending':
+        fpath = p['file']
+        if os.path.isfile(fpath) and os.path.getsize(fpath) > 0:
+            try:
+                with open(fpath) as fh:
+                    p['count'] = sum(1 for _ in fh)
+            except:
+                pass
+
+    del p['key']
+    del p['file']
+
+data['phases'] = phases
+with open('$tmp_json', 'w') as f:
+    json.dump(data, f)
+"
 
     python3 -c "
 import sys
@@ -622,7 +716,7 @@ enum_endpoints() {
     { cat "$sd/alive.txt" | hakrawler -subs 2>/dev/null > "$er/hakrawler.txt"; } &
     { cat "$sd/alive.txt" | waybackurls 2>/dev/null > "$er/waybackurls.txt"; } &
     { cat "$sd/alive.txt" | gau --subs --threads 10 2>/dev/null > "$er/gau.txt"; } &
-    { gospider -S "$sd/alive.txt" -o "$er/gospider_output" 2>/dev/null; find "$er/gospider_output" -type f -exec cat {} + 2>/dev/null | grep -Eo 'https?://[^ \"<>]+' | sort -u > "$er/gospider.txt"; rm -rf "$er/gospider_output"; } &
+    { gospider -S "$sd/alive.txt" -o "$er/gospider_output" >/dev/null 2>&1; find "$er/gospider_output" -type f -exec cat {} + 2>/dev/null | grep -Eo 'https?://[^ \"<>]+' | sort -u > "$er/gospider.txt"; rm -rf "$er/gospider_output"; } &
     { paramspider -l "$sd/alive.txt" &>/dev/null; cat results/*.txt 2>/dev/null > "$er/paramspider.txt"; rm -rf results 2>/dev/null; } &
     { curl -s --max-time 30 -G 'https://web.archive.org/cdx/search/cdx' --data-urlencode 'url=*.'"$domain"'/*' --data-urlencode 'collapse=urlkey' --data-urlencode 'output=text' --data-urlencode 'fl=original' > "$er/waybackcdx.txt" 2>/dev/null; } &
     wait

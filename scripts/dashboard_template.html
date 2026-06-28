@@ -417,6 +417,105 @@
             letter-spacing: 0.75px;
         }
 
+        /* ── Phase Progress Panel ── */
+        .phase-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.85rem;
+            margin-top: 1rem;
+        }
+        .phase-item {
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            padding: 0.85rem 1rem;
+            border-radius: 12px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.03);
+            transition: all 0.25s ease;
+        }
+        .phase-item:hover {
+            background: rgba(255,255,255,0.04);
+            border-color: rgba(255,255,255,0.07);
+        }
+        .phase-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            flex-shrink: 0;
+        }
+        .phase-icon.done {
+            background: rgba(16,185,129,0.12);
+            color: var(--success);
+            box-shadow: 0 0 12px rgba(16,185,129,0.15);
+        }
+        .phase-icon.running {
+            background: rgba(59,130,246,0.12);
+            color: var(--primary);
+            box-shadow: 0 0 12px rgba(59,130,246,0.15);
+            animation: pulse-running 1.2s ease-in-out infinite;
+        }
+        .phase-icon.pending {
+            background: rgba(82,82,91,0.08);
+            color: #52525b;
+        }
+        @keyframes pulse-running {
+            0%, 100% { box-shadow: 0 0 12px rgba(59,130,246,0.1); }
+            50% { box-shadow: 0 0 20px rgba(59,130,246,0.3); }
+        }
+        .phase-item .phase-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .phase-item .phase-name {
+            font-size: 0.86rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .phase-item .phase-meta {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            margin-top: 0.2rem;
+        }
+        .phase-item .phase-status {
+            font-size: 0.72rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            padding: 0.1rem 0.5rem;
+            border-radius: 20px;
+        }
+        .phase-status.done {
+            color: var(--success);
+            background: rgba(16,185,129,0.08);
+        }
+        .phase-status.running {
+            color: var(--primary);
+            background: rgba(59,130,246,0.08);
+        }
+        .phase-status.pending {
+            color: #52525b;
+            background: rgba(82,82,91,0.08);
+        }
+        .phase-item .phase-count {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+        }
+        @media (max-width: 1100px) {
+            .phase-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 700px) {
+            .phase-grid { grid-template-columns: 1fr; }
+        }
+
         /* Views (Tabs) Wrapper */
         .tab-view {
             display: none;
@@ -1086,6 +1185,21 @@
                     </div>
                 </div>
 
+                <!-- PHASE PROGRESS PANEL -->
+                <div class="card-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title"><span>📊</span> Pipeline Phase Progress</h2>
+                            <p class="panel-subtitle">Reconnaissance & bug hunting pipeline execution status</p>
+                        </div>
+                    </div>
+                    <div class="phase-grid" id="phase-grid">
+                        <div class="phase-item" style="grid-column: 1/-1; text-align: center; justify-content: center; color: var(--text-muted);">
+                            Loading phase data...
+                        </div>
+                    </div>
+                </div>
+
                 <div class="card-panel">
                     <div class="panel-header">
                         <div>
@@ -1423,6 +1537,9 @@
             jsBadge.innerText = `${jsCount} script(s)`;
             jsBadge.className = 'badge ' + (jsCount > 0 ? 'badge-info' : 'badge-muted');
 
+            // 0. Render Phase Progress
+            renderPhases();
+
             // 1. Populate Subdomains
             renderSubdomains();
 
@@ -1443,6 +1560,32 @@
         let activeSubStatus = 'all';
         let activeSubTech = 'all';
         let activeSubSearch = '';
+
+        // Render Phase Progress
+        function renderPhases() {
+            const container = document.getElementById('phase-grid');
+            const phases = targetData.phases || [];
+            if (phases.length === 0) {
+                container.innerHTML = '<div class="phase-item" style="grid-column:1/-1;text-align:center;justify-content:center;color:var(--text-muted)">No phase data available.</div>';
+                return;
+            }
+            const icons = ['1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣'];
+            container.innerHTML = phases.map(p => {
+                const status = p.status || 'pending';
+                const icon = icons[p.id - 1] || '🔹';
+                const countHtml = p.count ? `<span class="phase-count">${p.count} items</span>` : '';
+                return `<div class="phase-item">
+                    <div class="phase-icon ${status}">${icon}</div>
+                    <div class="phase-info">
+                        <div class="phase-name">${p.name}</div>
+                        <div class="phase-meta">
+                            <span class="phase-status ${status}">${status}</span>
+                            ${countHtml}
+                        </div>
+                    </div>
+                </div>`;
+            }).join('');
+        }
 
         // Render Subdomains & Status Codes Chart
         function renderSubdomains() {
@@ -1540,7 +1683,7 @@
                             <td>${techBadges}</td>
                         </tr>
                     `;
-                }).join(''));
+                }).join('');
         }
 
         function filterSubs(type, value) {

@@ -347,6 +347,29 @@ def main():
     js_file = data_dir / "js.urls"
     db["stats"]["js_files"] = len(read_lines_safe(js_file))
 
+    # Build phase progress data
+    phase_checks = [
+        (1, "Subdomain Enumeration",           data_dir / "subs.txt"),
+        (2, "IP Extraction & Resolution",      data_dir / "ips.txt"),
+        (3, "Live Host Probing",               data_dir / "alive.txt"),
+        (4, "Technology Fingerprinting",       data_dir / "technologies" / "waf_detect.txt"),
+        (5, "Port Scanning",                   data_dir / "open_ports.txt"),
+        (6, "Endpoint Discovery",              data_dir / "allendpoints.txt"),
+        (7, "Parameter Extraction",            hunt_dir / "params" / "xss.txt"),
+        (8, "JavaScript Collection & Analysis", data_dir / "js" / "deepscan.txt"),
+        (9, "Bug Detection & Quick Wins",      hunt_dir / "vulns" / "xss.txt"),
+    ]
+    phases = []
+    for pid, pname, pfile in phase_checks:
+        cnt = len(read_lines_safe(pfile))
+        phases.append({
+            "id": pid,
+            "name": pname,
+            "status": "done" if cnt > 0 or pfile.exists() else "pending",
+            "count": cnt if cnt > 0 else None
+        })
+    db["phases"] = phases
+
     # Read template and build output
     script_dir = Path(__file__).parent
     template_path = script_dir / "dashboard_template.html"
