@@ -111,12 +111,12 @@ dashboard_init() {
         subdomains: [], endpoints: [], secrets: {}, vulnerabilities: {}
       }' > "$tmp_json"
     python3 -c "
-import sys
+import json, sys
 with open('$DASHBOARD_TEMPLATE') as f:
     c = f.read()
 with open('$tmp_json') as f:
     d = f.read().rstrip('\n')
-c = c.replace('{DATA_PLACEHOLDER}', d.replace('</script>', '<\\/script>'))
+c = c.replace('{DATA_PLACEHOLDER}', d.replace('</script>', '<' + chr(92) + '/script>'))
 c = c.replace('{TARGET}', d[:d.index(',')].split(':')[1].strip(' \"') if ',' in d else '')
 with open('$html', 'w') as f:
     f.write(c)
@@ -138,6 +138,10 @@ dashboard_update() {
     for f in "$sd/js_hunt/deepscan.txt" "$sd/js_hunt/gitleaks.txt"; do
         [[ -f "$f" ]] && sec=$((sec + $(wc -l < "$f")))
     done
+    if [[ -s "$sd/js_hunt/mantra_secrets.json" ]]; then
+        local mantra_sec; mantra_sec=$(python3 -c "import json; d=json.load(open('$sd/js_hunt/mantra_secrets.json')); print(len(d.get('findings',[])))" 2>/dev/null || echo 0)
+        sec=$((sec + mantra_sec))
+    fi
     for f in "$sd/raw/bugs"/*.txt; do
         [[ -f "$f" ]] && v=$((v + $(wc -l < "$f")))
     done
@@ -280,6 +284,27 @@ json.dump(vulns, sys.stdout)
         rm -f "$tmp_vulns"
     fi
 
+    # ── Inject mantra secrets ──
+    if [[ -s "$sd/js_hunt/mantra_secrets.json" ]]; then
+        python3 -c "
+import json, sys
+with open('$sd/js_hunt/mantra_secrets.json') as f:
+    ms = json.load(f)
+with open('$tmp_json') as f:
+    data = json.load(f)
+secrets = {}
+for f_item in ms.get('findings', []):
+    cat = f_item.get('category', 'other')
+    if cat not in secrets:
+        secrets[cat] = []
+    secrets[cat].append({'url': f_item['url'], 'value': f_item['finding']})
+if secrets:
+    data['secrets'] = secrets
+with open('$tmp_json', 'w') as f:
+    json.dump(data, f)
+"
+    fi
+
     # ── Phase progress tracking ──
     python3 -c "
 import json, os, sys
@@ -321,16 +346,6 @@ else:
     elif current_phase != 'start':
         current_idx = len(phases)
 
-stat_map = {
-    'subdomains': 'subdomains',
-    'live_hosts': 'live_hosts',
-    'open_ports': 'open_ports',
-    'endpoints': 'endpoints',
-    'js_files': 'js_files',
-    'secrets': 'secrets',
-    'vulns': 'vulns',
-}
-
 for i, p in enumerate(phases):
     if i < current_idx:
         status = 'done'
@@ -343,17 +358,13 @@ for i, p in enumerate(phases):
         status = 'pending'
 
     count = None
-    for sk, sv in stat_map.items():
-        if sk == p['key'] or (p['key'] == 'alive' and sk == 'live_hosts') or (p['key'] == 'ports' and sk == 'open_ports') or (p['key'] == 'js_extract' and sk in ('js_files', 'secrets')):
-            if sk in data.get('stats', {}):
-                val = data['stats'][sk]
-                if val and val > 0:
-                    if count is None:
-                        count = 0
-                    count += val
+    if status == 'done' and p['key'] in data.get('stats', {}):
+        val = data['stats'][p['key']]
+        if val and val > 0:
+            count = val
 
     p['status'] = status
-    if status == 'done' and count is not None and count > 0:
+    if count is not None and count > 0:
         p['count'] = count
     elif status != 'pending':
         fpath = p['file']
@@ -373,12 +384,12 @@ with open('$tmp_json', 'w') as f:
 "
 
     python3 -c "
-import sys
+import json, sys
 with open('$DASHBOARD_TEMPLATE') as f:
     c = f.read()
 with open('$tmp_json') as f:
     d = f.read().rstrip('\n')
-c = c.replace('{DATA_PLACEHOLDER}', d.replace('</script>', '<\\/script>'))
+c = c.replace('{DATA_PLACEHOLDER}', d.replace('</script>', '<' + chr(92) + '/script>'))
 c = c.replace('{TARGET}', d[:d.index(',')].split(':')[1].strip(' \"') if ',' in d else '')
 with open('$html', 'w') as f:
     f.write(c)
@@ -818,22 +829,71 @@ extract_js() {
 
     run_tool "mantra"      "$jd/mantra.txt"     2 $total bash -c "cat '$sd/jsfile.txt' | mantra -s -d 2>/dev/null > '$jd/mantra.txt'"
 
-    run_tool "deep-scan"   "$jd/deepscan.txt"   3 $total bash -c "cd '$jd/files' && { \
-      grep -rhaE 'AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}' . 2>/dev/null; \
-      grep -rhaE 'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}' . 2>/dev/null; \
-      grep -rhaE '(sk|pk)_(live|test)_[A-Za-z0-9]{10,}' . 2>/dev/null; \
-      grep -rhaE 'gh[pousr]_[A-Za-z0-9]{36,}' . 2>/dev/null; \
-      grep -rhaE 'SG\.[A-Za-z0-9_-]{20,}' . 2>/dev/null; \
-      grep -rhaE 'AIza[0-9A-Za-z_-]{35}' . 2>/dev/null; \
-      grep -rhaE '-----BEGIN (RSA |EC )?PRIVATE KEY-----' . 2>/dev/null; \
-      grep -rhaE 'mongodb(\+srv)?://[^\"<> ]+' . 2>/dev/null; \
-      grep -rhaE 'glpat-[A-Za-z0-9_-]{20,}' . 2>/dev/null; \
-      grep -rhaE 'key-[0-9a-f]{32}' . 2>/dev/null; \
-      grep -rhaE 'pk\.eyJ[A-Za-z0-9_-]{30,}' . 2>/dev/null; \
-      grep -rhaE 'hooks\.slack\.com/services/[A-Za-z0-9/]+' . 2>/dev/null; \
-      grep -rhaE 'redis://[^\"<> ]+' . 2>/dev/null; \
-      grep -rhaE 'postgresql://[^\"<> ]+' . 2>/dev/null; \
-    } > '$jd/deepscan.txt'"
+    # Write deepscan Python script to temp file to avoid quoting issues
+    cat > "$jd/deepscan_script.py" << 'DEEPEOF'
+import os, re, sys, glob
+files_dir = sys.argv[1]
+results = []
+if os.path.isdir(files_dir):
+    for ext in ('*.js', '*.json', '*.html', '*.txt'):
+        for fpath in glob.glob(os.path.join(files_dir, ext)):
+            try:
+                with open(fpath, 'r', errors='ignore') as f:
+                    content = f.read()
+            except:
+                continue
+            bname = os.path.basename(fpath)
+            # AWS keys
+            for m in re.finditer(r'AKIA[0-9A-Z]{16}|ASIA[0-9A-Z]{16}', content):
+                results.append(f'[aws] {bname}: {m.group()}')
+            # JWT
+            for m in re.finditer(r'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}', content):
+                results.append(f'[jwt] {bname}: {m.group()[:80]}')
+            # Stripe
+            for m in re.finditer(r'(sk|pk)_(live|test)_[A-Za-z0-9]{10,}', content):
+                results.append(f'[stripe] {bname}: {m.group()}')
+            # GitHub tokens
+            for m in re.finditer(r'gh[pousr]_[A-Za-z0-9]{36,}', content):
+                results.append(f'[github] {bname}: {m.group()}')
+            # SendGrid
+            for m in re.finditer(r'SG\.[A-Za-z0-9_-]{20,}', content):
+                results.append(f'[sendgrid] {bname}: {m.group()}')
+            # GCP
+            for m in re.finditer(r'AIza[0-9A-Za-z_-]{35}', content):
+                results.append(f'[gcp] {bname}: {m.group()}')
+            # Private keys
+            for m in re.finditer(r'-----BEGIN (RSA |EC )?PRIVATE KEY-----', content):
+                results.append(f'[private_key] {bname}: found')
+            # MongoDB
+            for m in re.finditer(r'mongodb(\+srv)?://[^\s\"<>]+', content):
+                results.append(f'[mongodb] {bname}: {m.group()[:80]}')
+            # GitLab
+            for m in re.finditer(r'glpat-[A-Za-z0-9_-]{20,}', content):
+                results.append(f'[gitlab] {bname}: {m.group()}')
+            # Slack webhook
+            for m in re.finditer(r'hooks\.slack\.com/services/[A-Za-z0-9/]+', content):
+                results.append(f'[slack] {bname}: {m.group()}')
+            # Redis/Postgres URLs
+            for m in re.finditer(r'(redis|postgresql)://[^\s\"<>]+', content):
+                results.append(f'[db_url] {bname}: {m.group()[:80]}')
+            # API key assignments (key=value)
+            for m in re.finditer(r'(?:api[Kk]ey|API_KEY|api_key|api-key)[=:]["\'"]?\s*([A-Za-z0-9_\-/+=]{10,80})', content):
+                results.append(f'[api_key] {bname}: {m.group(1)}')
+            # Access token
+            for m in re.finditer(r'(?:access_token|ACCESS_TOKEN|accesstoken)[=:]["\'"]?\s*([A-Za-z0-9_\-/+=]{5,80})', content):
+                results.append(f'[access_token] {bname}: {m.group(1)}')
+            # Client secret
+            for m in re.finditer(r'(?:client_secret|CLIENT_SECRET)[=:]["\'"]?\s*([A-Za-z0-9_\-/+=]{5,80})', content):
+                results.append(f'[client_secret] {bname}: {m.group(1)}')
+            # Statsig client key
+            for m in re.finditer(r'client-[A-Za-z0-9]{30,}', content):
+                results.append(f'[statsig_key] {bname}: {m.group()}')
+            # Sentry
+            for m in re.finditer(r'(?:sentry_key|sentry_secret|SENTRY_DSN)[=:]["\'"]?\s*([A-Za-z0-9_\-]{5,80})', content):
+                results.append(f'[sentry] {bname}: {m.group(1)}')
+sys.stdout.write('\n'.join(results))
+DEEPEOF
+    run_tool "deep-scan"   "$jd/deepscan.txt"   3 $total bash -c "python3 '$jd/deepscan_script.py' '$jd/files' > '$jd/deepscan.txt'"
 
     run_tool "endpoints"   "$jd/endpoints.txt"  4 $total bash -c "grep -roaE '/[a-zA-Z0-9_/.-]*(api|v[0-9]|graphql|rest|auth|oauth|token|admin|dashboard|console|swagger|health|actuator)[a-zA-Z0-9_/.-]*' '$jd/files/' 2>/dev/null | sort -u > '$jd/endpoints.txt'"
 
@@ -847,6 +907,38 @@ extract_js() {
     deep_cnt=$(wc -l < "$jd/deepscan.txt" 2>/dev/null || echo 0)
     ep_cnt=$(wc -l < "$jd/endpoints.txt" 2>/dev/null || echo 0)
     gl_cnt=$(wc -l < "$jd/gitleaks.txt" 2>/dev/null || echo 0)
+
+    # ── Parse mantra output for real secret findings ──
+    if [[ -s "$jd/mantra.txt" ]]; then
+        python3 -c "
+import re, json
+with open('$jd/mantra.txt') as f:
+    lines = f.readlines()
+findings = []
+cats = {}
+for line in lines:
+    s = re.sub(r'\x1b\[[0-9;]*[mK]', '', line).strip()
+    if s.startswith('[+]'):
+        m = re.match(r'\[\+\]\s+(\S+)\s+\[+([^\]]+)\]+', s)
+        if m:
+            url = m.group(1)
+            finding = m.group(2)
+            fl = finding.lower()
+            if 'key' in fl: cat = 'api_keys'
+            elif 'token' in fl or 'access' in fl: cat = 'tokens'
+            elif 'secret' in fl: cat = 'secrets'
+            elif 's3' in fl or 'aws' in fl: cat = 'aws_keys'
+            elif 'sentry' in fl: cat = 'sentry'
+            elif 'password' in fl: cat = 'passwords'
+            else: cat = 'other'
+            findings.append({'url': url, 'finding': finding, 'category': cat})
+            cats[cat] = cats.get(cat, 0) + 1
+with open('$jd/mantra_secrets.json', 'w') as f:
+    json.dump({'findings': findings, 'categories': cats}, f)
+print(f'  {D}┃{N}  {G}✓{N}  {D}mantra secrets: {len(findings)} findings in {len(cats)} categories{N}')
+" 2>&1 || true
+    fi
+
     rm -rf "$jd/files" 2>/dev/null
 
     phase_sep
