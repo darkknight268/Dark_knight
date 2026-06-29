@@ -670,6 +670,26 @@
             flex-wrap: wrap;
         }
 
+        .copy-filtered-btn {
+            background: rgba(59,130,246,0.08);
+            border: 1px solid rgba(59,130,246,0.15);
+            color: var(--primary);
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-family: 'Outfit', sans-serif;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+        .copy-filtered-btn:hover {
+            background: rgba(59,130,246,0.15);
+            border-color: rgba(59,130,246,0.3);
+        }
+
         .search-bar {
             flex: 1;
             min-width: 280px;
@@ -1279,6 +1299,7 @@
                             <span id="subs-tech-pills"></span>
                         </div>
                         <span id="subs-count" style="font-size:0.78rem;color:var(--text-muted);margin-top:0.5rem;display:block;"></span>
+                        <button onclick="copyFilteredSubs()" class="copy-filtered-btn" title="Copy filtered subdomains to clipboard">📋 Copy Filtered</button>
                     </div>
 
                     <div class="table-container">
@@ -1585,6 +1606,51 @@
                     </div>
                 </div>`;
             }).join('');
+        }
+
+        // Copy filtered subdomains to clipboard
+        function copyFilteredSubs() {
+            const subList = targetData.subdomains || [];
+            let filtered = [...subList];
+            if (activeSubStatus !== 'all') {
+                if (activeSubStatus === 'null') {
+                    filtered = filtered.filter(s => !s.status);
+                } else {
+                    const prefix = parseInt(activeSubStatus);
+                    filtered = filtered.filter(s => s.status && Math.floor(s.status / 100) === prefix);
+                }
+            }
+            if (activeSubTech !== 'all') {
+                filtered = filtered.filter(s => (s.tech || []).includes(activeSubTech));
+            }
+            if (activeSubSearch) {
+                const q = activeSubSearch.toLowerCase();
+                filtered = filtered.filter(s =>
+                    s.domain.toLowerCase().includes(q) ||
+                    (s.ips || '').toLowerCase().includes(q)
+                );
+            }
+            const text = filtered.map(s => s.domain).join('\n');
+            if (!text) { alert('No subdomains to copy.'); return; }
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector('.copy-filtered-btn');
+                const orig = btn.innerHTML;
+                btn.innerHTML = '✔ Copied!';
+                btn.style.background = 'rgba(16,185,129,0.15)';
+                btn.style.borderColor = 'var(--success)';
+                btn.style.color = 'var(--success)';
+                setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }, 2000);
+            }).catch(() => {
+                // Fallback for file:// protocol or restricted contexts
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed'; ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); alert('Copied ' + filtered.length + ' subdomains!'); }
+                catch(e) { prompt('Copy these subdomains (Ctrl+C):', text); }
+                document.body.removeChild(ta);
+            });
         }
 
         // Render Subdomains & Status Codes Chart
