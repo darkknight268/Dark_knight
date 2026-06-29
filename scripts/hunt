@@ -305,6 +305,55 @@ with open('$tmp_json', 'w') as f:
 "
     fi
 
+    # ── Information Disclosure from endpoints ──
+    python3 -c "
+import json, os, sys, re
+sd = '$sd'
+with open('$tmp_json') as f:
+    data = json.load(f)
+ep_file = os.path.join(sd, 'allendpoints.txt')
+if os.path.isfile(ep_file) and os.path.getsize(ep_file) > 0:
+    ext_pattern = re.compile(
+        r'\.(docx?|xlsx?|pptx?|pdf|txt|csv|md|'
+        r'zip|tar\.gz|tgz|gz|bz2|7z|rar|tar|'
+        r'json|xml|ya?ml|config|ini|'
+        r'sql|db|backup|sqlite|'
+        r'key|pem|crt|pub|asc|secret|'
+        r'exe|dll|bin|bat|sh|'
+        r'log|tmp|cache|md5|bak'
+        r')(?:\\?|$|/)', re.I
+    )
+    categories = {
+        'pdf':'Document','doc':'Document','docx':'Document','xls':'Document','xlsx':'Document',
+        'ppt':'Document','pptx':'Document','txt':'Document','csv':'Document','md':'Document',
+        'zip':'Archive','tar':'Archive','tar.gz':'Archive','tgz':'Archive','gz':'Archive',
+        'bz2':'Archive','7z':'Archive','rar':'Archive','deb':'Archive','rpm':'Archive',
+        'iso':'Archive','img':'Archive','apk':'Archive','msi':'Archive','dmg':'Archive',
+        'json':'Config','xml':'Config','yml':'Config','yaml':'Config','config':'Config','ini':'Config',
+        'sql':'Database','db':'Database','backup':'Database','sqlite':'Database',
+        'key':'Security','pem':'Security','crt':'Security','pub':'Security','asc':'Security','secret':'Security',
+        'exe':'Executable','dll':'Executable','bin':'Executable','bat':'Executable','sh':'Executable',
+        'log':'Other','tmp':'Other','cache':'Other','md5':'Other','bak':'Other',
+    }
+    findings = []; seen = set()
+    with open(ep_file) as f:
+        for line in f:
+            url = line.strip()
+            if not url: continue
+            m = ext_pattern.search(url)
+            if m:
+                ext = m.group(1).lower()
+                cat = categories.get(ext, 'Other')
+                key = f'{cat}:{url}'
+                if key in seen: continue
+                seen.add(key)
+                findings.append({'url': url, 'ext': ext, 'category': cat})
+    if findings:
+        data['info_disclosures'] = findings
+        data['stats']['info_disclosures'] = len(findings)
+with open('$tmp_json', 'w') as f:
+    json.dump(data, f)
+"
     # ── Phase progress tracking ──
     python3 -c "
 import json, os, sys

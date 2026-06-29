@@ -112,10 +112,12 @@ def main():
             "takeovers": 0,
             "wafs": 0,
             "juicy_endpoints": 0,
-            "js_files": 0
+            "js_files": 0,
+            "info_disclosures": 0
         },
         "subdomains": [],
         "endpoints": [],
+        "info_disclosures": [],
         "secrets": {},
         "vulnerabilities": {}
     }
@@ -269,17 +271,21 @@ def main():
         "Security": (".key", ".pem", ".crt", ".pub", ".asc", ".p12", ".jks", ".cert", ".csr"),
         "Log/Temp": (".log", ".tmp", ".cache", ".secret", ".md5", ".out", ".err"),
     }
-    disclosure_found = {}
-    for cat, exts in disclosure_categories.items():
-        matches = []
-        for ep in db["endpoints"]:
-            url_lower = ep["url"].lower()
+    disclosure_found = []
+    seen = set()
+    for ep in db["endpoints"]:
+        url_lower = ep["url"].lower()
+        for cat, exts in disclosure_categories.items():
             if any(url_lower.endswith(ext) or f"{ext}?" in url_lower or f"{ext}/" in url_lower for ext in exts):
-                matches.append(ep["url"])
-        if matches:
-            disclosure_found[cat] = list(set(matches))
-    db["info_disclosure"] = disclosure_found
-    db["stats"]["info_disclosure"] = sum(len(v) for v in disclosure_found.values())
+                ext = [e for e in exts if url_lower.endswith(e) or f"{e}?" in url_lower or f"{e}/" in url_lower][0]
+                ext = ext.lstrip(".")
+                key = f"{cat}:{ep['url']}"
+                if key not in seen:
+                    seen.add(key)
+                    disclosure_found.append({"url": ep["url"], "ext": ext, "category": cat})
+                break
+    db["info_disclosures"] = disclosure_found
+    db["stats"]["info_disclosures"] = len(disclosure_found)
 
     # 4. Parse Secrets
     secret_files = {

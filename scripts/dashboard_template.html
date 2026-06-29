@@ -1079,6 +1079,9 @@
                 <li class="nav-item" data-target="ports">
                     <button><span>🔌</span> <span>Ports</span></button>
                 </li>
+                <li class="nav-item" data-target="infodisclosure">
+                    <button><span>📋</span> <span>Info Disclosure</span></button>
+                </li>
             </ul>
 
             <div class="sidebar-footer">
@@ -1131,6 +1134,11 @@
                     <span class="stat-icon">⚡</span>
                     <span class="stat-value" id="stat-vulns">0</span>
                     <span class="stat-label">Vuln Indicators</span>
+                </div>
+                <div class="stat-card warning">
+                    <span class="stat-icon">📋</span>
+                    <span class="stat-value" id="stat-infodisc">0</span>
+                    <span class="stat-label">Info Disclosure</span>
                 </div>
             </section>
 
@@ -1423,6 +1431,29 @@
                     </div>
                 </div>
             </section>
+
+            <!-- VIEW: INFORMATION DISCLOSURE -->
+            <section id="view-infodisclosure" class="tab-view">
+                <div class="card-panel">
+                    <div class="panel-header">
+                        <div>
+                            <h2 class="panel-title"><span>📋</span> Information Disclosure</h2>
+                            <p class="panel-subtitle">Exposed sensitive files and information leaks found in endpoints</p>
+                        </div>
+                    </div>
+
+                    <div class="controls">
+                        <div class="search-bar">
+                            <input type="text" id="search-infodisclosure" placeholder="Search endpoints or file types...">
+                        </div>
+                        <button onclick="copyFilteredInfoDisclosure()" class="copy-filtered-btn" title="Copy filtered info disclosure items to clipboard">📋 Copy Filtered</button>
+                    </div>
+
+                    <div id="infodisclosure-accordion-container">
+                        <!-- Populated Dynamically via Accordions -->
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 
@@ -1509,6 +1540,7 @@
             const urls = data.stats?.endpoints || 0;
             const secrets = data.stats?.secrets || 0;
             const vulns = data.stats?.vulns || 0;
+            const infodisc = data.stats?.info_disclosures || 0;
 
             document.getElementById('stat-subs').innerText = subs;
             document.getElementById('stat-live').innerText = live;
@@ -1516,6 +1548,7 @@
             document.getElementById('stat-urls').innerText = urls;
             document.getElementById('stat-secrets').innerText = secrets;
             document.getElementById('stat-vulns').innerText = vulns;
+            document.getElementById('stat-infodisc').innerText = infodisc;
 
             // Threat vector pie chart labels
             document.getElementById('pie-lbl-secrets').innerText = secrets;
@@ -1575,6 +1608,9 @@
 
             // 5. Populate Ports
             renderPorts();
+
+            // 6. Populate Info Disclosure
+            renderInfoDisclosure();
         });
 
         // Filter state for subdomains
@@ -2020,6 +2056,128 @@
             const portsSearch = document.getElementById('search-ports');
             if (portsSearch) {
                 portsSearch.addEventListener('input', renderPorts);
+            }
+        });
+
+        // Render Info Disclosure accordion
+        function renderInfoDisclosure() {
+            const container = document.getElementById('infodisclosure-accordion-container');
+            const items = targetData.info_disclosures || [];
+            const searchVal = (document.getElementById('search-infodisclosure')?.value || '').toLowerCase();
+
+            if (items.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-icon">🛡️</div>
+                        <div class="empty-title">No Information Disclosure</div>
+                        <div class="empty-desc">No sensitive file endpoints were identified in the scanned data.</div>
+                    </div>
+                `;
+                return;
+            }
+
+            let filtered = items;
+            if (searchVal) {
+                filtered = items.filter(i =>
+                    i.url.toLowerCase().includes(searchVal) ||
+                    i.ext.toLowerCase().includes(searchVal) ||
+                    i.category.toLowerCase().includes(searchVal)
+                );
+            }
+
+            // Group by category
+            const groups = {};
+            filtered.forEach(i => {
+                const cat = i.category || 'Other';
+                if (!groups[cat]) groups[cat] = [];
+                groups[cat].push(i);
+            });
+
+            const categoryIcons = {
+                'Document': '📄', 'Archive': '🗜️', 'Config': '⚙️',
+                'Database': '🗄️', 'Security': '🔑', 'Executable': '⚡',
+                'Other': '📁'
+            };
+
+            container.innerHTML = Object.keys(groups).map((cat, idx) => {
+                const catItems = groups[cat];
+                const icon = categoryIcons[cat] || '📁';
+                const extList = [...new Set(catItems.map(i => i.ext))].sort().join(', ');
+                return `
+                    <div class="accordion-item" onclick="toggleAccordion(this)">
+                        <div class="accordion-header">
+                            <span>${icon} ${cat} <span class="badge badge-warning" style="margin-left: 0.5rem">${catItems.length} items</span>
+                            <span style="margin-left:0.6rem;font-size:0.72rem;color:var(--text-muted);font-weight:400;">${extList}</span></span>
+                            <span class="accordion-toggle-icon">▼</span>
+                        </div>
+                        <div class="accordion-content" onclick="event.stopPropagation()">
+                            <div class="table-container" style="margin-top: 1rem">
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Endpoint URL</th>
+                                            <th>File Type</th>
+                                            <th>Category</th>
+                                            <th>Action</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${catItems.map(item => `
+                                            <tr>
+                                                <td><a href="${item.url}" target="_blank" style="color:var(--primary);text-decoration:none;font-family:'JetBrains Mono',monospace;font-size:0.82rem;word-break:break-all;">${item.url}</a></td>
+                                                <td><span class="badge badge-info">.${item.ext}</span></td>
+                                                <td><span class="badge badge-accent">${item.category}</span></td>
+                                                <td><button class="btn btn-secondary btn-sm" onclick="copyText(${JSON.stringify(item.url)}, this)">Copy URL</button></td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // Copy filtered info disclosure items to clipboard
+        function copyFilteredInfoDisclosure() {
+            const items = targetData.info_disclosures || [];
+            const searchVal = (document.getElementById('search-infodisclosure')?.value || '').toLowerCase();
+            let filtered = items;
+            if (searchVal) {
+                filtered = items.filter(i =>
+                    i.url.toLowerCase().includes(searchVal) ||
+                    i.ext.toLowerCase().includes(searchVal) ||
+                    i.category.toLowerCase().includes(searchVal)
+                );
+            }
+            const text = filtered.map(i => i.url).join('\n');
+            if (!text) { alert('No items to copy.'); return; }
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.querySelector('#view-infodisclosure .copy-filtered-btn');
+                const orig = btn.innerHTML;
+                btn.innerHTML = '✔ Copied!';
+                btn.style.background = 'rgba(16,185,129,0.15)';
+                btn.style.borderColor = 'var(--success)';
+                btn.style.color = 'var(--success)';
+                setTimeout(() => { btn.innerHTML = orig; btn.style.background = ''; btn.style.borderColor = ''; btn.style.color = ''; }, 2000);
+            }).catch(() => {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed'; ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                try { document.execCommand('copy'); alert('Copied ' + filtered.length + ' items!'); }
+                catch(e) { prompt('Copy these URLs (Ctrl+C):', text); }
+                document.body.removeChild(ta);
+            });
+        }
+
+        // Bind Info Disclosure search
+        document.addEventListener('DOMContentLoaded', () => {
+            const searchEl = document.getElementById('search-infodisclosure');
+            if (searchEl) {
+                searchEl.addEventListener('input', renderInfoDisclosure);
             }
         });
     </script>
