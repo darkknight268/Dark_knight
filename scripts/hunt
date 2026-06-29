@@ -117,6 +117,7 @@ with open('$DASHBOARD_TEMPLATE') as f:
 with open('$tmp_json') as f:
     d = f.read().rstrip('\n')
 c = c.replace('{DATA_PLACEHOLDER}', d.replace('</script>', '<\\/script>'))
+c = c.replace('{TARGET}', d[:d.index(',')].split(':')[1].strip(' \"') if ',' in d else '')
 with open('$html', 'w') as f:
     f.write(c)
 "
@@ -378,6 +379,7 @@ with open('$DASHBOARD_TEMPLATE') as f:
 with open('$tmp_json') as f:
     d = f.read().rstrip('\n')
 c = c.replace('{DATA_PLACEHOLDER}', d.replace('</script>', '<\\/script>'))
+c = c.replace('{TARGET}', d[:d.index(',')].split(':')[1].strip(' \"') if ',' in d else '')
 with open('$html', 'w') as f:
     f.write(c)
 "
