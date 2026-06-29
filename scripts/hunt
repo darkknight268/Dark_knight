@@ -297,7 +297,7 @@ for f_item in ms.get('findings', []):
     cat = f_item.get('category', 'other')
     if cat not in secrets:
         secrets[cat] = []
-    secrets[cat].append({'url': f_item['url'], 'value': f_item['finding']})
+    secrets[cat].append({'source': f_item['url'], 'value': f_item['value']})
 if secrets:
     data['secrets'] = secrets
 with open('$tmp_json', 'w') as f:
